@@ -10,6 +10,8 @@
 !/docs/interfaces/
 !/docs/interfaces/magnet_control/
 !/docs/interfaces/magnet_control/*.md
+!/docs/q1/
+!/docs/q1/*.md
 
 # Python caches and local environments
 **/__pycache__/
