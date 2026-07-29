@@ -1,11 +1,11 @@
-"""基于最新场景只规划一块；缺少标定时不生成机械臂坐标。"""
+"""基于最新场景只规划一块；使用完整 R、t 与区分 pick/release roll。"""
 
 from __future__ import annotations
 
 import numpy as np
 
 from .calibration import ArmCoordinateMapper
-from .geometry import normalize_angle_deg, rigid_placement_transform
+from .geometry import apply_rigid_transform, compute_rigid_transform, normalize_angle_deg
 from .models import PaperPose, SceneAnalysis, SingleMovePlan
 from .runtime_config import Q1RuntimeConfig
 
@@ -24,28 +24,38 @@ def plan_single_move(
         raise RuntimeError(f"PLAN_FAILED: {template_id}当前不可见")
     source_vertices = np.asarray(piece.vertices_mm, dtype=np.float64)
     target_vertices = np.asarray(state.expected_target_vertices_mm, dtype=np.float64)
-    start_c, end_c, align_rot_deg = rigid_placement_transform(source_vertices, target_vertices)
+    transform = compute_rigid_transform(source_vertices, target_vertices)
+    if not transform.valid:
+        raise RuntimeError(f"PLAN_FAILED: {template_id}刚性变换无效: {transform.rejection_reason}")
 
-    source = PaperPose(float(start_c[0]), float(start_c[1]), piece.angle_deg)
-    target = PaperPose(float(end_c[0]), float(end_c[1]), 0.0)
-    rotation_delta_deg = normalize_angle_deg(align_rot_deg)
+    pick_point_source_mm = np.asarray(piece.center_mm, dtype=np.float64)
+    release_point_target_mm = apply_rigid_transform(pick_point_source_mm, transform)
+    rotation_delta_deg = normalize_angle_deg(transform.rotation_deg)
 
-    source_robot = target_robot = pick_robot = approach = transfer = release = None
+    source = PaperPose(float(pick_point_source_mm[0]), float(pick_point_source_mm[1]), piece.angle_deg)
+    target = PaperPose(float(release_point_target_mm[0]), float(release_point_target_mm[1]), 0.0)
+
+    source_robot = target_robot = pick_robot = approach = transfer = release = rotate_pose = None
+    pick_roll_deg = release_roll_deg = None
     if mapper.is_calibrated():
         if None in (config.pick_height, config.release_height, config.safe_height, config.move_duration_ms):
             raise RuntimeError("CALIBRATION_REQUIRED: 缺少抓取/释放/安全高度或动作时间")
-        source_robot = mapper.paper_to_robot(source.x_mm, source.y_mm, float(config.pick_height))
-        target_robot = mapper.paper_to_robot(target.x_mm, target.y_mm, float(config.release_height))
+        wrist = mapper.map_in_plane_rotation(rotation_delta_deg)
+        if not wrist.valid:
+            raise RuntimeError(wrist.rejection_reason or "WRIST_ROTATION_OUT_OF_RANGE")
+        pick_roll_deg = float(wrist.pick_roll_deg)
+        release_roll_deg = float(wrist.release_roll_deg)
+
+        source_robot = mapper.paper_to_robot(source.x_mm, source.y_mm, float(config.pick_height), roll_deg=pick_roll_deg)
         pick_robot = source_robot
-        approach = mapper.paper_to_robot(source.x_mm, source.y_mm, float(config.safe_height))
-        transfer = mapper.paper_to_robot(target.x_mm, target.y_mm, float(config.safe_height))
+        approach = mapper.paper_to_robot(source.x_mm, source.y_mm, float(config.safe_height), roll_deg=pick_roll_deg)
+        rotate_pose = mapper.paper_to_robot(source.x_mm, source.y_mm, float(config.safe_height), roll_deg=release_roll_deg)
+        transfer = mapper.paper_to_robot(target.x_mm, target.y_mm, float(config.safe_height), roll_deg=release_roll_deg)
+        target_robot = mapper.paper_to_robot(
+            target.x_mm, target.y_mm, float(config.release_height), roll_deg=release_roll_deg
+        )
         release = target_robot
-
-        wrist_roll = mapper.map_in_plane_rotation(rotation_delta_deg)
-        for pose in (source_robot, target_robot, pick_robot, approach, transfer, release):
-            pose.roll = float(wrist_roll)
-
-        for pose in (source_robot, target_robot, pick_robot, approach, transfer, release):
+        for pose in (source_robot, target_robot, pick_robot, approach, transfer, release, rotate_pose):
             pose.duration_ms = int(config.move_duration_ms)
 
     return SingleMovePlan(
@@ -55,7 +65,7 @@ def plan_single_move(
         target_pose_paper=target,
         source_pose_robot=source_robot,
         target_pose_robot=target_robot,
-        pick_point_paper=(float(start_c[0]), float(start_c[1])),
+        pick_point_paper=(float(pick_point_source_mm[0]), float(pick_point_source_mm[1])),
         pick_point_robot=pick_robot,
         approach_pose=approach,
         transfer_pose=transfer,
@@ -64,4 +74,12 @@ def plan_single_move(
         confidence=piece.confidence,
         reason_selected=reason_selected,
         retry_index=state.retry_count,
+        source_vertices_mm=source_vertices,
+        target_vertices_mm=target_vertices,
+        rigid_transform=transform,
+        pick_point_source_mm=pick_point_source_mm,
+        release_point_target_mm=release_point_target_mm,
+        pick_roll_deg=pick_roll_deg,
+        release_roll_deg=release_roll_deg,
+        rotate_pose=rotate_pose,
     )

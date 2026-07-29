@@ -54,10 +54,20 @@
 
 ## D-006 Q1 纸面内旋转映射到 NexArm roll，参数来自 arm_calibration
 
-- 决策：单块规划的刚性对齐角写入 `RobotPose.roll`；`pitch` 保持标定文件中的默认俯仰。`arm_calibration` JSON 必须提供 `wrist_roll_zero_deg`、`wrist_roll_sign`、`wrist_roll_min_deg`、`wrist_roll_max_deg`，缺一则禁止 RealRun。
-- 原因：用户确认 roll 控制纸面内旋转；`cv2.minAreaRect` 角度对不规则碎片不稳定，须与完成判定共用刚性对齐角。
-- 替代方案：使用固定 roll=0 或依赖 minAreaRect 角度（已否决）。
-- 依据：`2026E/q1/motion.py`；`2026E/q1/calibration.py::map_in_plane_rotation`；NexArm SDK `set_pose(x,y,z,pitch,roll,claw,duration_ms)`。
+- 决策：单块规划区分 `pick_roll_deg` 与 `release_roll_deg`；吸取后在安全高度旋转腕部。`arm_calibration` JSON 必须提供 `wrist_roll_zero_deg`、`wrist_roll_sign`、`wrist_roll_min_deg`、`wrist_roll_max_deg`，缺一则禁止 RealRun。越界时返回 `WRIST_ROTATION_OUT_OF_RANGE`，禁止静默 clamp。
+- 原因：用户确认 roll 控制纸面内旋转；碎片真正旋转发生在吸取后的腕部变化。
+- 替代方案：同一 roll 贯穿全部位姿；静默截断（已否决）。
+- 依据：`2026E/q1/motion.py`；`2026E/q1/wrist.py`；`2026E/q1/calibration.py::map_in_plane_rotation`；NexArm SDK `set_pose(...)`。
 - 影响范围：Q1 运动规划、机械臂标定文件格式、实机验证项。
 - 当前状态：已采用；腕部映射尚未实机标定。
 - 需要重新评估的条件：实机低速测试证明 roll 并非纸面内旋转轴或需改用其他姿态字段。
+
+## D-007 Q1 采用全局模板分配、精确边拟合与绝对放置判定
+
+- 决策：静态分析对 N 个候选枚举 C(N,4)×4! 全局分配；`approxPolyDP` 仅作粗顶点，最终顶点由稳健直线拟合求交；刚性变换返回完整 R、t；放置判定使用 A4 全局毫米绝对顶点误差；选择器使用真实几何评分。
+- 原因：检测常出现 4～7 个候选，旧前 N 截断与轮廓顺序不可靠；approxPolyDP 顶点精度不足。
+- 替代方案：取面积最大四块；用 minAreaRect 角度（已否决）。
+- 依据：`2026E/q1/puzzle_solver.py::assign_templates_global`；`edge_refinement.py`；`geometry.py::compute_rigid_transform`；`tests/q1/test_geometry_optimization.py`。
+- 影响范围：Q1 视觉分析、运动规划、审计恢复、选择器评分。
+- 当前状态：已采用（离线测试通过）；实机参数见 `docs/TODO_VERIFY.md`。
+- 需要重新评估的条件：实机电磁铁吸取点偏离几何中心需改 `pick_point_source_mm` 定义时。

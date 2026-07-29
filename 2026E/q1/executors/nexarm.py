@@ -77,6 +77,7 @@ class NexArmRobotExecutor:
         required = (plan.approach_pose, plan.source_pose_robot, plan.transfer_pose, plan.release_pose)
         if any(pose is None for pose in required):
             return ExecutionResult(False, plan.template_id, "CALIBRATION_REQUIRED")
+        # 以 pick_roll 到达源 → 吸取 → 抬升 → 在安全高度旋转到 release_roll → 搬运 → 下降释放
         self._move(plan.approach_pose)
         self._move(plan.source_pose_robot)
         with magnet.hold_session():
@@ -84,6 +85,8 @@ class NexArmRobotExecutor:
                 raise RuntimeError("缺少电磁铁吸合稳定时间")
             time.sleep(self.config.magnet_settle_ms / 1000.0)
             self._move(plan.approach_pose)
+            if plan.rotate_pose is not None:
+                self._move(plan.rotate_pose)
             self._move(plan.transfer_pose)
             self._move(plan.release_pose)
         self._move(plan.transfer_pose)

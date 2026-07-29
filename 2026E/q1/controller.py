@@ -19,6 +19,7 @@ from .calibration import ArmCoordinateMapper
 from .models import ExecutionResult, SceneAnalysis, SingleMovePlan
 from .motion import plan_single_move
 from .runtime_config import Q1RuntimeConfig
+from .auditor import audit_scene
 from .selector import select_next_piece
 from .state_machine import Q1State, Q1StateMachine, StateEvent
 
@@ -145,6 +146,29 @@ class Q1Controller:
             cv2.putText(overlay, piece.template_id or "?", center, cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
         cv2.imwrite(str(cycle_dir / "overlay.png"), overlay)
         scene.image_path = str(raw_path)
+        try:
+            from .debug_viz import save_debug_overlays
+
+            save_debug_overlays(
+                cycle_dir,
+                rectified=view,
+                scene=scene,
+                assignment=getattr(self.analyzer, "last_assignment", None),
+            )
+        except Exception:
+            pass
+        self._save_cycle(
+            cycle,
+            "result.json",
+            {
+                "scene_valid": scene.scene_valid,
+                "placed": sorted(scene.placed_templates),
+                "remaining": sorted(scene.remaining_templates),
+                "assignment_cost": scene.assignment_total_cost,
+                "assignment_margin": scene.assignment_margin,
+                "warnings": scene.warnings,
+            },
+        )
 
     def run(self) -> SceneAnalysis:
         cycle = 0
@@ -212,17 +236,34 @@ class Q1Controller:
 
                 self._transition(Q1State.PLAN_SINGLE_MOVE, cycle, template_id)
                 plan_started = time.perf_counter()
-                plan = plan_single_move(
-                    scene,
-                    template_id,
-                    self.mapper,
-                    self.config,
-                    reason_selected=selection["reason"],
-                )
+                if selection.get("use_previous_plan") and self.previous_action is not None:
+                    # MISSING/释放失败：不得从不存在的源位置重新规划
+                    plan = self.previous_action
+                    plan.reason_selected = selection["reason"]
+                else:
+                    plan = plan_single_move(
+                        scene,
+                        template_id,
+                        self.mapper,
+                        self.config,
+                        reason_selected=selection["reason"],
+                    )
                 scene.timings_ms["single_plan_ms"] = (time.perf_counter() - plan_started) * 1000.0
                 scene.timings_ms["total_cycle_ms"] = (time.perf_counter() - cycle_started) * 1000.0
                 self._save_cycle(cycle, "scene.json", scene)
                 self._save_cycle(cycle, "single_move_plan.json", plan)
+
+                if audit.recovery_mode == "RELEASE_RECOVERY_FROM_LAST_PLAN":
+                    self._transition(Q1State.RELEASE_RECOVERY, cycle, template_id, "missing after move")
+                    self.magnet.ensure_off()
+                    result = self.robot.execute_release_recovery(plan, 1)
+                    self.executions.append(result)
+                    self._save_cycle(cycle, "execution_result.json", result)
+                    self._transition(Q1State.RETURN_TO_OBSERVE, cycle, template_id)
+                    self.previous_scene = scene
+                    self.previous_action = plan
+                    cycle += 1
+                    continue
 
                 self._transition(Q1State.EXECUTE_PICK, cycle, template_id)
                 self._transition(Q1State.VERIFY_PICK, cycle, template_id)

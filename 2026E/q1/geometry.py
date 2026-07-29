@@ -2,11 +2,29 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Tuple
 
 import numpy as np
 
 Point = Tuple[float, float]
+
+
+@dataclass
+class RigidTransformResult:
+    rotation_matrix: np.ndarray
+    translation_mm: np.ndarray
+    rotation_deg: float
+    correspondence: list[int]
+    source_vertices_mm: np.ndarray
+    target_vertices_mm: np.ndarray
+    transformed_vertices_mm: np.ndarray
+    max_error_mm: float
+    rms_error_mm: float
+    determinant: float
+    mirrored: bool
+    valid: bool
+    rejection_reason: str | None
 
 
 def resample_polygon(vertices: np.ndarray, n: int = 64) -> np.ndarray:
@@ -230,12 +248,111 @@ def rigid_placement_transform(
     target_vertices: np.ndarray,
     n: int = 64,
 ) -> tuple[tuple[float, float], tuple[float, float], float]:
-    """
-    返回刚性放置变换：源质心、目标质心（与输入同单位）、终止旋转角（度）。
-    用于将不规则碎片从当前姿态映射到图 2 目标顶点。
-    """
-    _, start_c, end_c, end_angle = decompose_rigid_motion(source_vertices, target_vertices, n)
-    return start_c, end_c, end_angle
+    """兼容旧接口：源质心、目标质心、旋转角。"""
+    result = compute_rigid_transform(source_vertices, target_vertices, n=n)
+    if not result.valid:
+        _, start_c, end_c, end_angle = decompose_rigid_motion(source_vertices, target_vertices, n)
+        return start_c, end_c, end_angle
+    src_c = np.mean(result.source_vertices_mm, axis=0)
+    dst_c = np.mean(result.target_vertices_mm, axis=0)
+    return (float(src_c[0]), float(src_c[1])), (float(dst_c[0]), float(dst_c[1])), result.rotation_deg
+
+
+def compute_rigid_transform(
+    source_vertices_mm: np.ndarray,
+    target_vertices_mm: np.ndarray,
+    n: int = 64,
+) -> RigidTransformResult:
+    """求解 target ≈ R @ source + t，禁止镜像与缩放。"""
+    src_raw = np.asarray(source_vertices_mm, dtype=np.float64).reshape(-1, 2)
+    tgt_raw = np.asarray(target_vertices_mm, dtype=np.float64).reshape(-1, 2)
+    if len(src_raw) < 3 or len(tgt_raw) < 3:
+        return RigidTransformResult(
+            np.eye(2),
+            np.zeros(2),
+            0.0,
+            [],
+            src_raw,
+            tgt_raw,
+            src_raw,
+            float("inf"),
+            float("inf"),
+            1.0,
+            False,
+            False,
+            "TOO_FEW_VERTICES",
+        )
+
+    use_raw = len(src_raw) == len(tgt_raw) and len(src_raw) <= 8
+    dst = tgt_raw.copy() if use_raw else resample_polygon(tgt_raw, n)
+    dst_c = dst.mean(axis=0)
+    best = None
+    for variant in _vertex_order_variants(src_raw):
+        src_base = np.asarray(variant, dtype=np.float64) if use_raw else resample_polygon(variant, n)
+        shifts = range(len(src_base)) if len(src_base) > 3 else range(1)
+        for shift in shifts:
+            src = np.roll(src_base, shift, axis=0) if shift else src_base
+            src_c = src.mean(axis=0)
+            R = procrustes_rotation_no_flip(src - src_c, dst - dst_c)
+            det = float(np.linalg.det(R))
+            if det <= 0:
+                continue
+            t = dst_c - R @ src_c
+            transformed = (src @ R.T) + t
+            # Kabsch with row vectors: (src-c) @ R.T + dst_c
+            transformed = (src - src_c) @ R.T + dst_c
+            t = dst_c - R @ src_c
+            errors = np.linalg.norm(transformed - dst, axis=1)
+            max_err = float(errors.max())
+            rms = float(np.sqrt(np.mean(errors**2)))
+            if best is None or max_err < best["max_err"]:
+                best = {
+                    "R": R,
+                    "t": t,
+                    "src": src,
+                    "transformed": transformed,
+                    "max_err": max_err,
+                    "rms": rms,
+                    "det": det,
+                    "angle": normalize_angle_deg(rotation_angle_deg(R)),
+                    "corr": list(range(len(src))),
+                }
+    if best is None:
+        return RigidTransformResult(
+            np.eye(2),
+            np.zeros(2),
+            0.0,
+            [],
+            src_raw,
+            tgt_raw,
+            src_raw,
+            float("inf"),
+            float("inf"),
+            -1.0,
+            True,
+            False,
+            "MIRRORED_OR_NO_SOLUTION",
+        )
+    return RigidTransformResult(
+        rotation_matrix=best["R"],
+        translation_mm=best["t"],
+        rotation_deg=best["angle"],
+        correspondence=best["corr"],
+        source_vertices_mm=best["src"],
+        target_vertices_mm=dst,
+        transformed_vertices_mm=best["transformed"],
+        max_error_mm=best["max_err"],
+        rms_error_mm=best["rms"],
+        determinant=best["det"],
+        mirrored=False,
+        valid=True,
+        rejection_reason=None,
+    )
+
+
+def apply_rigid_transform(point_mm: np.ndarray, transform: RigidTransformResult) -> np.ndarray:
+    point = np.asarray(point_mm, dtype=np.float64).reshape(2)
+    return transform.rotation_matrix @ point + transform.translation_mm
 
 
 def max_vertex_error(vertices_a: np.ndarray, vertices_b: np.ndarray, n: int = 64) -> float:

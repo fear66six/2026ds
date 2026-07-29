@@ -10,6 +10,7 @@ import cv2
 import numpy as np
 
 from .models import RobotPose
+from .wrist import WristRotationResult, choose_wrist_release_roll
 
 
 @dataclass
@@ -100,14 +101,23 @@ class ArmCoordinateMapper:
             and self.wrist_roll_max_deg is not None
         )
 
-    def map_in_plane_rotation(self, delta_deg: float) -> float:
+    def map_in_plane_rotation(
+        self, delta_deg: float, *, pick_roll_deg: float | None = None
+    ) -> WristRotationResult:
         if not self.wrist_mapping_ready():
             raise RuntimeError("CALIBRATION_REQUIRED: 缺少腕部 roll 零位/方向/范围标定")
-        roll = float(self.wrist_roll_zero_deg) + float(self.wrist_roll_sign) * float(delta_deg)
-        roll = max(float(self.wrist_roll_min_deg), min(float(self.wrist_roll_max_deg), roll))
-        return roll
+        pick = float(self.wrist_roll_zero_deg if pick_roll_deg is None else pick_roll_deg)
+        return choose_wrist_release_roll(
+            pick_roll_deg=pick,
+            rotation_delta_deg=float(delta_deg),
+            wrist_roll_sign=float(self.wrist_roll_sign),
+            roll_min_deg=float(self.wrist_roll_min_deg),
+            roll_max_deg=float(self.wrist_roll_max_deg),
+        )
 
-    def paper_to_robot(self, x_mm: float, y_mm: float, z_mm: float) -> RobotPose:
+    def paper_to_robot(
+        self, x_mm: float, y_mm: float, z_mm: float, *, roll_deg: float = 0.0
+    ) -> RobotPose:
         if self._matrix is None:
             raise RuntimeError("CALIBRATION_REQUIRED")
         if self._matrix.shape == (3, 3):
@@ -122,7 +132,7 @@ class ArmCoordinateMapper:
             float(ry),
             float(rz),
             self.default_pitch_deg,
-            0.0,
+            float(roll_deg),
             self.default_claw,
             0,
         )
