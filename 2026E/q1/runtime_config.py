@@ -53,6 +53,16 @@ class Q1RuntimeConfig:
             blockers.append("CALIBRATION_REQUIRED: 缺少A4到机械臂坐标标定")
         if self.paper_calibration is None or not self.paper_calibration.exists():
             blockers.append("CALIBRATION_REQUIRED: 缺少A4四角标定")
+        if self.arm_calibration is not None and self.arm_calibration.exists():
+            mapper = None
+            try:
+                from .calibration import ArmCoordinateMapper
+
+                mapper = ArmCoordinateMapper(self.arm_calibration)
+            except ValueError as exc:
+                blockers.append(f"CALIBRATION_REQUIRED: 机械臂标定无效 ({exc})")
+            if mapper is not None and not mapper.wrist_mapping_ready():
+                blockers.append("CALIBRATION_REQUIRED: 缺少腕部 roll 零位/方向/范围标定")
         if not self.nexarm_port:
             blockers.append("缺少NexArm端口")
         if not self.magnet_port:

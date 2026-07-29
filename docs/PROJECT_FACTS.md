@@ -111,3 +111,13 @@
 - 适用范围：2026-07-29 当前烧录固件和 ATK-MO340P COM15 链路
 - 最后核查时间：2026-07-29
 - 备注：测试未发送 `MAGNET_ON`；MOSFET、电磁铁和负载电源仍未连接。板载 Micro-USB 因固件不实现 USB 设备栈而出现 Windows Code 43，不影响独立的 COM15 USART1 链路。
+
+## F-012 Q1 图 2 目标矩形为 10 cm × 6 cm 四片拼合
+
+- 结论：赛题 PDF 第 2 页图 2 要求四片自备碎片拼成 10 cm × 6 cm 矩形；`2026E/q1/pieces.py` 以左上角为原点、x 向右、y 向下定义外框与对角线分点，四片面积和为 60 cm²。目标区默认放在 A4 下半区水平居中、距分界线 2 cm，左上角纸面坐标 `(55.0, 168.5) mm`。
+- 来源：`docs/E题_拼图装置.pdf` 第 2 页；`2026E/q1/pieces.py`；`2026E/q1/config.py` 的 `TARGET_ORIGIN_*`
+- 来源位置：图 2 尺寸标注；`verify_geometry_invariants()`；`TARGET_ORIGIN_X_CM` / `TARGET_ORIGIN_Y_CM`
+- 可信等级：B（赛题 PDF）+ A（源码几何校验）
+- 适用范围：Q1 视觉匹配、单步规划与完成判定
+- 最后核查时间：2026-07-29
+- 备注：纸面内旋转在规划中映射到 NexArm `set_pose` 的 `roll` 字段；零位/方向/范围须由 `arm_calibration` JSON 实机标定，不得伪造默认值。

@@ -41,3 +41,23 @@
 - 影响范围：`firmware/stm32f103_uart_magnet/`、`drivers/stm32_magnet_uart.py`、后续 Jetson 串口集成与电气验证。
 - 当前状态：固件和离线驱动已实现并编译；尚未烧录或执行 PB12 实机输出测试。
 - 需要重新评估的条件：实际 MOSFET 模块空载测试证明输入极性或 3.3 V 兼容性与该决定不符，或硬件架构改变。
+
+## D-005 Q1 生产入口仅暴露真实摄像头 + NexArm + STM32 电磁铁闭环
+
+- 决策：`2026E/q1/main.py` 不再提供 `simulate`、`dry-run`、人工移动或 `--image` 离线入口；仅构建 `SnapshotCamera + NexArmRobotExecutor + STM32MagnetController`。仿真/Mock 模块保留在包内供离线测试，但不得从生产 CLI 触发。
+- 原因：赛题实机调试需要单一真实路径，避免误用仿真画面或人工代替机械臂；同时遵守 D-003 的多重硬件门禁。
+- 替代方案：继续保留 dry-run/人工模式作为默认调试入口。
+- 依据：`2026E/q1/main.py`；`2026E/q1/runtime_config.py::real_run_blockers`；用户 2026-07-29 确认。
+- 影响范围：Q1 运行方式、文档与测试策略（`tests/q1/` 仅离线回归）。
+- 当前状态：已采用。
+- 需要重新评估的条件：需要经批准的受控 dry-run 分层解锁流程时另立决策。
+
+## D-006 Q1 纸面内旋转映射到 NexArm roll，参数来自 arm_calibration
+
+- 决策：单块规划的刚性对齐角写入 `RobotPose.roll`；`pitch` 保持标定文件中的默认俯仰。`arm_calibration` JSON 必须提供 `wrist_roll_zero_deg`、`wrist_roll_sign`、`wrist_roll_min_deg`、`wrist_roll_max_deg`，缺一则禁止 RealRun。
+- 原因：用户确认 roll 控制纸面内旋转；`cv2.minAreaRect` 角度对不规则碎片不稳定，须与完成判定共用刚性对齐角。
+- 替代方案：使用固定 roll=0 或依赖 minAreaRect 角度（已否决）。
+- 依据：`2026E/q1/motion.py`；`2026E/q1/calibration.py::map_in_plane_rotation`；NexArm SDK `set_pose(x,y,z,pitch,roll,claw,duration_ms)`。
+- 影响范围：Q1 运动规划、机械臂标定文件格式、实机验证项。
+- 当前状态：已采用；腕部映射尚未实机标定。
+- 需要重新评估的条件：实机低速测试证明 roll 并非纸面内旋转轴或需改用其他姿态字段。

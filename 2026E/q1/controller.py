@@ -13,7 +13,8 @@ from typing import Any
 import numpy as np
 import cv2
 
-from .auditor import audit_scene
+from . import config
+from .pieces import target_rectangle_vertices_mm
 from .calibration import ArmCoordinateMapper
 from .models import ExecutionResult, SceneAnalysis, SingleMovePlan
 from .motion import plan_single_move
@@ -98,6 +99,44 @@ class Q1Controller:
             view = snapshot.frame.copy()
         cv2.imwrite(str(cycle_dir / "rectified.png"), view)
         overlay = view.copy()
+        px_per_mm = None
+        if scene.pieces:
+            piece = scene.pieces[0]
+            verts_mm = np.asarray(piece.vertices_mm, dtype=np.float64)
+            verts_px = np.asarray(piece.vertices_px, dtype=np.float64).reshape(-1, 2)
+            span_mm = float(np.max(np.ptp(verts_mm, axis=0)))
+            span_px = float(np.max(np.ptp(verts_px, axis=0)))
+            if span_mm > 1e-3 and span_px > 1e-3:
+                px_per_mm = span_px / span_mm
+        if px_per_mm is None and getattr(self.analyzer, "paper_calibration", None) is not None:
+            output_w, _ = self.analyzer.paper_calibration.output_size
+            px_per_mm = output_w / (config.A4_WIDTH_CM * 10.0)
+
+        if px_per_mm is not None:
+            origin = self.config.target_origin_mm
+            rect = np.rint(target_rectangle_vertices_mm(origin) * px_per_mm).astype(np.int32)
+            cv2.polylines(overlay, [rect.reshape(-1, 1, 2)], True, (0, 200, 255), 2, cv2.LINE_AA)
+            for template_id, state in scene.templates.items():
+                expected = np.rint(state.expected_target_vertices_mm * px_per_mm).astype(np.int32)
+                cv2.polylines(
+                    overlay,
+                    [expected.reshape(-1, 1, 2)],
+                    True,
+                    (0, 140, 255),
+                    1,
+                    cv2.LINE_AA,
+                )
+                cv2.putText(
+                    overlay,
+                    template_id,
+                    tuple(np.rint(np.mean(expected, axis=0)).astype(int)),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.45,
+                    (0, 140, 255),
+                    1,
+                    cv2.LINE_AA,
+                )
+
         for piece in scene.pieces:
             points = np.rint(piece.vertices_px).astype(np.int32).reshape(-1, 1, 2)
             color = (0, 210, 0) if piece.template_id in scene.placed_templates else (0, 210, 255)

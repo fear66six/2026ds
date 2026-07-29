@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 
 from .calibration import ArmCoordinateMapper
-from .geometry import normalize_angle_deg
+from .geometry import normalize_angle_deg, rigid_placement_transform
 from .models import PaperPose, SceneAnalysis, SingleMovePlan
 from .runtime_config import Q1RuntimeConfig
 
@@ -22,9 +22,13 @@ def plan_single_move(
     piece = state.detected_piece
     if piece is None:
         raise RuntimeError(f"PLAN_FAILED: {template_id}当前不可见")
-    source = PaperPose(piece.center_mm[0], piece.center_mm[1], piece.angle_deg)
-    target_center = np.mean(state.expected_target_vertices_mm, axis=0)
-    target = PaperPose(float(target_center[0]), float(target_center[1]), 0.0)
+    source_vertices = np.asarray(piece.vertices_mm, dtype=np.float64)
+    target_vertices = np.asarray(state.expected_target_vertices_mm, dtype=np.float64)
+    start_c, end_c, align_rot_deg = rigid_placement_transform(source_vertices, target_vertices)
+
+    source = PaperPose(float(start_c[0]), float(start_c[1]), piece.angle_deg)
+    target = PaperPose(float(end_c[0]), float(end_c[1]), 0.0)
+    rotation_delta_deg = normalize_angle_deg(align_rot_deg)
 
     source_robot = target_robot = pick_robot = approach = transfer = release = None
     if mapper.is_calibrated():
@@ -36,6 +40,11 @@ def plan_single_move(
         approach = mapper.paper_to_robot(source.x_mm, source.y_mm, float(config.safe_height))
         transfer = mapper.paper_to_robot(target.x_mm, target.y_mm, float(config.safe_height))
         release = target_robot
+
+        wrist_roll = mapper.map_in_plane_rotation(rotation_delta_deg)
+        for pose in (source_robot, target_robot, pick_robot, approach, transfer, release):
+            pose.roll = float(wrist_roll)
+
         for pose in (source_robot, target_robot, pick_robot, approach, transfer, release):
             pose.duration_ms = int(config.move_duration_ms)
 
@@ -46,12 +55,12 @@ def plan_single_move(
         target_pose_paper=target,
         source_pose_robot=source_robot,
         target_pose_robot=target_robot,
-        pick_point_paper=piece.center_mm,
+        pick_point_paper=(float(start_c[0]), float(start_c[1])),
         pick_point_robot=pick_robot,
         approach_pose=approach,
         transfer_pose=transfer,
         release_pose=release,
-        rotation_delta_deg=normalize_angle_deg(-piece.angle_deg),
+        rotation_delta_deg=float(rotation_delta_deg),
         confidence=piece.confidence,
         reason_selected=reason_selected,
         retry_index=state.retry_count,

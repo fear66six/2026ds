@@ -10,9 +10,9 @@ import numpy as np
 
 from . import config
 from .calibration import PaperCalibration
-from .geometry import normalize_angle_deg, principal_angle_deg
+from .geometry import compute_rigid_align_error, normalize_angle_deg, principal_angle_deg
 from .models import PieceGeometry, PieceTaskStatus, SceneAnalysis, Snapshot, TemplateState
-from .pieces import PIECE_TEMPLATES
+from .pieces import PIECE_TEMPLATES, template_target_vertices_mm
 from .puzzle_solver import assign_pieces
 from .vision import PaperFrame, cm_to_px, detect_divider_line, detect_paper, detect_pieces
 
@@ -41,7 +41,7 @@ def _cyclic_vertex_error(actual: np.ndarray, expected: np.ndarray) -> float:
 
 
 def _template_vertices_mm(index: int, origin_mm: tuple[float, float]) -> np.ndarray:
-    return PIECE_TEMPLATES[index].world_vertices((origin_mm[0] / 10.0, origin_mm[1] / 10.0)) * 10.0
+    return template_target_vertices_mm(index, origin_mm)
 
 
 class SceneAnalyzer:
@@ -205,7 +205,10 @@ class SceneAnalyzer:
                 continue
             expected_center = np.mean(expected, axis=0)
             center_error = float(np.linalg.norm(np.asarray(piece.center_mm) - expected_center))
-            angle_error = abs(normalize_angle_deg(piece.angle_deg))
+            # 角度误差用“轮廓刚性对齐到目标模板”的旋转角定义，
+            # 避免 vision.minAreaRect 对不规则轮廓给出不稳定 angle 定义。
+            _, rot_deg = compute_rigid_align_error(piece.vertices_mm, expected)
+            angle_error = abs(normalize_angle_deg(rot_deg))
             vertex_error = _cyclic_vertex_error(piece.vertices_mm, expected)
             if piece.region == "LOWER_TARGET":
                 status = (

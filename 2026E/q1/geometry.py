@@ -225,6 +225,19 @@ def compute_rigid_align_error(
     return max_err, angle
 
 
+def rigid_placement_transform(
+    source_vertices: np.ndarray,
+    target_vertices: np.ndarray,
+    n: int = 64,
+) -> tuple[tuple[float, float], tuple[float, float], float]:
+    """
+    返回刚性放置变换：源质心、目标质心（与输入同单位）、终止旋转角（度）。
+    用于将不规则碎片从当前姿态映射到图 2 目标顶点。
+    """
+    _, start_c, end_c, end_angle = decompose_rigid_motion(source_vertices, target_vertices, n)
+    return start_c, end_c, end_angle
+
+
 def max_vertex_error(vertices_a: np.ndarray, vertices_b: np.ndarray, n: int = 64) -> float:
     a = resample_polygon(vertices_a, n)
     b = resample_polygon(vertices_b, n)

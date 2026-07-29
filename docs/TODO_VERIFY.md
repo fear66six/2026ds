@@ -89,3 +89,14 @@
 - 是否涉及硬件风险：低。
 - 是否阻止当前开发：阻止真实采集参数和像素到机械坐标映射；不阻止离线图像算法。
 - 优先级：高。
+
+## V-009 Q1 腕部 roll 与纸面内旋转的实机标定
+
+- 问题：`arm_calibration` 中的 `wrist_roll_zero_deg`、`wrist_roll_sign`、`wrist_roll_min_deg`、`wrist_roll_max_deg` 是否与当前安装姿态下 NexArm `roll` 的纸面内旋转一致？
+- 已搜索范围：`docs/NexArm机械臂/.../UART_Control/nexarm_sdk.py` 的 `set_pose`；`2026E/q1/calibration.py`；用户确认 roll 为纸面内旋转。
+- 当前候选：工程决策 D-006 将刚性对齐角映射到 roll；零位与方向待实机低速验证。
+- 无法确认原因：末端安装、夹爪朝向与坐标系定义取决于实机装配，厂商 SDK 未在已读资料中给出 roll 与纸面旋转的一一证明。
+- 确认方式：经用户批准后低速、无负载、小角度（如 ±15°）roll 指令，对照纸面标定板或已知矩形碎片旋转方向，记录并写入 `arm_calibration` JSON。
+- 是否涉及硬件风险：中至高。
+- 是否阻止当前开发：阻止带旋转的真实拼接；不阻止离线几何与视觉算法。
+- 优先级：高。

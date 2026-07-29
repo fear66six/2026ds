@@ -64,15 +64,48 @@ class ArmCoordinateMapper:
     def __init__(self, path: Path | None) -> None:
         self.path = path
         self._matrix: np.ndarray | None = None
+        self.wrist_roll_zero_deg: float | None = None
+        self.wrist_roll_sign: float | None = None
+        self.wrist_roll_min_deg: float | None = None
+        self.wrist_roll_max_deg: float | None = None
+        self.default_pitch_deg: float = -90.0
+        self.default_claw: float = 0.0
         if path is not None and path.exists():
             data = json.loads(path.read_text(encoding="utf-8"))
             matrix = np.asarray(data.get("paper_to_robot_matrix"), dtype=np.float64)
             if matrix.shape not in ((3, 3), (4, 4)):
                 raise ValueError("机械臂标定矩阵必须为3x3或4x4")
             self._matrix = matrix
+            if "wrist_roll_zero_deg" in data:
+                self.wrist_roll_zero_deg = float(data["wrist_roll_zero_deg"])
+            if "wrist_roll_sign" in data:
+                self.wrist_roll_sign = float(data["wrist_roll_sign"])
+            if "wrist_roll_min_deg" in data:
+                self.wrist_roll_min_deg = float(data["wrist_roll_min_deg"])
+            if "wrist_roll_max_deg" in data:
+                self.wrist_roll_max_deg = float(data["wrist_roll_max_deg"])
+            if "default_pitch_deg" in data:
+                self.default_pitch_deg = float(data["default_pitch_deg"])
+            if "default_claw" in data:
+                self.default_claw = float(data["default_claw"])
 
     def is_calibrated(self) -> bool:
         return self._matrix is not None
+
+    def wrist_mapping_ready(self) -> bool:
+        return (
+            self.wrist_roll_zero_deg is not None
+            and self.wrist_roll_sign is not None
+            and self.wrist_roll_min_deg is not None
+            and self.wrist_roll_max_deg is not None
+        )
+
+    def map_in_plane_rotation(self, delta_deg: float) -> float:
+        if not self.wrist_mapping_ready():
+            raise RuntimeError("CALIBRATION_REQUIRED: 缺少腕部 roll 零位/方向/范围标定")
+        roll = float(self.wrist_roll_zero_deg) + float(self.wrist_roll_sign) * float(delta_deg)
+        roll = max(float(self.wrist_roll_min_deg), min(float(self.wrist_roll_max_deg), roll))
+        return roll
 
     def paper_to_robot(self, x_mm: float, y_mm: float, z_mm: float) -> RobotPose:
         if self._matrix is None:
@@ -84,4 +117,12 @@ class ArmCoordinateMapper:
         else:
             out = self._matrix @ np.array([x_mm, y_mm, z_mm, 1.0])
             rx, ry, rz = out[:3] / out[3]
-        return RobotPose(float(rx), float(ry), float(rz), -90.0, 0.0, 0.0, 0)
+        return RobotPose(
+            float(rx),
+            float(ry),
+            float(rz),
+            self.default_pitch_deg,
+            0.0,
+            self.default_claw,
+            0,
+        )

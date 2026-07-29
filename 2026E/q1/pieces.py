@@ -12,11 +12,19 @@ Point = Tuple[float, float]
 # 图 2 目标矩形总尺寸
 TARGET_RECT_WIDTH_CM = 10.0
 TARGET_RECT_HEIGHT_CM = 6.0
+TARGET_RECT_WIDTH_MM = TARGET_RECT_WIDTH_CM * 10.0
+TARGET_RECT_HEIGHT_MM = TARGET_RECT_HEIGHT_CM * 10.0
 
-# 主对角线 (2,6)→(10,0) 上的分割点（图 2 标注 2cm / 3cm 处）
-DIAG_TOP = (2.0, 0.0)       # 图坐标 (2,6) → 代码 y 向下
-DIAG_POINT_A = (3.6, 1.2)   # 距顶点 2cm
-DIAG_POINT_B = (7.6, 4.2)   # 距右下角 3cm
+# 图 2 外框与分割线命名点（局部坐标 cm，左上角为原点，x 右 y 下）
+RECT_TOP_LEFT = (0.0, 0.0)
+RECT_TOP_RIGHT = (10.0, 0.0)
+RECT_BOTTOM_LEFT = (0.0, 6.0)
+RECT_BOTTOM_RIGHT = (10.0, 6.0)
+LEFT_EDGE_Y_2CM = (0.0, 2.0)
+LEFT_EDGE_Y_3CM = (0.0, 3.0)
+DIAG_TOP = (2.0, 0.0)       # 主对角线起点（顶边 2cm 处）
+DIAG_POINT_A = (3.6, 1.2)   # 主对角线上距 DIAG_TOP 2cm
+DIAG_POINT_B = (7.6, 4.2)   # 主对角线上距 RECT_BOTTOM_RIGHT 3cm
 
 
 @dataclass
@@ -124,13 +132,71 @@ def get_template(name: str) -> PieceTemplate:
     raise KeyError(name)
 
 
-def verify_templates() -> dict:
-    """校验四片面积之和是否等于 10×6"""
+def target_rectangle_vertices_mm(origin_mm: tuple[float, float]) -> np.ndarray:
+    """图 2 目标外框四角（mm，纸面坐标）。"""
+    ox, oy = origin_mm
+    return np.array(
+        [
+            [ox, oy],
+            [ox + TARGET_RECT_WIDTH_MM, oy],
+            [ox + TARGET_RECT_WIDTH_MM, oy + TARGET_RECT_HEIGHT_MM],
+            [ox, oy + TARGET_RECT_HEIGHT_MM],
+        ],
+        dtype=np.float64,
+    )
+
+
+def template_target_vertices_mm(template_index: int, origin_mm: tuple[float, float]) -> np.ndarray:
+    """单块模板在目标区的精确顶点（mm）。"""
+    return PIECE_TEMPLATES[template_index].world_vertices(
+        (origin_mm[0] / 10.0, origin_mm[1] / 10.0)
+    ) * 10.0
+
+
+def _point_on_segment(p: Point, a: Point, b: Point, tol: float = 0.05) -> bool:
+    ax, ay = a
+    bx, by = b
+    px, py = p
+    cross = abs((bx - ax) * (py - ay) - (by - ay) * (px - ax))
+    if cross > tol * max(np.hypot(bx - ax, by - ay), 1e-6):
+        return False
+    dot = (px - ax) * (bx - ax) + (py - ay) * (by - ay)
+    if dot < -tol:
+        return False
+    seg_len_sq = (bx - ax) ** 2 + (by - ay) ** 2
+    return dot <= seg_len_sq + tol
+
+
+def verify_geometry_invariants() -> dict:
+    """校验图 2 四片拼合几何不变量。"""
     total = sum(t.area for t in PIECE_TEMPLATES)
     expected = TARGET_RECT_WIDTH_CM * TARGET_RECT_HEIGHT_CM
+    diag_len = float(np.hypot(10.0 - 2.0, 6.0 - 0.0))
+    dist_a = float(np.hypot(DIAG_POINT_A[0] - DIAG_TOP[0], DIAG_POINT_A[1] - DIAG_TOP[1]))
+    dist_b = float(np.hypot(DIAG_POINT_B[0] - RECT_BOTTOM_RIGHT[0], DIAG_POINT_B[1] - RECT_BOTTOM_RIGHT[1]))
+    on_diag = (
+        _point_on_segment(DIAG_POINT_A, DIAG_TOP, RECT_BOTTOM_RIGHT)
+        and _point_on_segment(DIAG_POINT_B, DIAG_TOP, RECT_BOTTOM_RIGHT)
+    )
     return {
         "piece_areas": {t.name: round(t.area, 2) for t in PIECE_TEMPLATES},
-        "total_area": round(total, 2),
-        "expected_area": expected,
-        "ok": abs(total - expected) < 0.01,
+        "total_area_cm2": round(total, 2),
+        "expected_area_cm2": expected,
+        "area_ok": abs(total - expected) < 0.01,
+        "diagonal_length_cm": round(diag_len, 2),
+        "diag_point_a_distance_cm": round(dist_a, 2),
+        "diag_point_b_distance_cm": round(dist_b, 2),
+        "diag_markers_ok": on_diag and abs(dist_a - 2.0) < 0.05 and abs(dist_b - 3.0) < 0.05,
+        "ok": abs(total - expected) < 0.01 and on_diag,
+    }
+
+
+def verify_templates() -> dict:
+    """兼容旧接口：面积之和是否等于 10×6。"""
+    report = verify_geometry_invariants()
+    return {
+        "piece_areas": report["piece_areas"],
+        "total_area": report["total_area_cm2"],
+        "expected_area": report["expected_area_cm2"],
+        "ok": report["ok"],
     }

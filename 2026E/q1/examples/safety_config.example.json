@@ -1,0 +1,15 @@
+{
+  "safe_height": 120.0,
+  "pick_height": 40.0,
+  "release_height": 38.0,
+  "move_duration_ms": 1500,
+  "magnet_settle_ms": 200,
+  "release_peel_delta": [0.0, 5.0, 10.0],
+  "workspace_limits": {
+    "x": [0.0, 300.0],
+    "y": [-200.0, 200.0],
+    "z": [0.0, 250.0]
+  },
+  "observe_pose": [200.0, 0.0, 160.0, -90.0, 0.0, -60.0, 1500],
+  "_note": "高度、工作区与观察位须实机确认后填写"
+}
