@@ -1,0 +1,1 @@
+﻿Command: STM32_Programmer_CLI.exe -c port=COM15 br=115200 P=EVEN db=8 sb=1 fc=OFF -u 0x08000000 0x0E40 D:\diansai\2026\logs\stm32_uart_bootloader\post_flash_readback.bin ExitCode: 0 Timestamp: 2026-07-29T12:46:14.8580687+08:00  System.Object[]

@@ -7,6 +7,9 @@
 !/docs/PROJECT_FACTS.md
 !/docs/DECISIONS.md
 !/docs/TODO_VERIFY.md
+!/docs/interfaces/
+!/docs/interfaces/magnet_control/
+!/docs/interfaces/magnet_control/*.md
 
 # Python caches and local environments
 **/__pycache__/

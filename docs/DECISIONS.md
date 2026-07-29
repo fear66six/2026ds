@@ -31,3 +31,13 @@
 - 影响范围：NexArm、Jetson GPIO、STM32、电磁铁、继电器/MOSFET 和测试脚本。
 - 当前状态：已采用。
 - 需要重新评估的条件：不取消默认安全策略；仅可为受控测试增加经用户批准的分层解锁流程。
+
+## D-004 STM32 电磁铁控制采用 USART1 和 PB12，不开发 USB CDC
+
+- 决策：运行链路采用 Jetson USB 转 ATK-MO340P USB-TTL，再接 STM32F103C8T6 USART1；PA9/PA10 使用 115200、8N1，PB12 作为 MOSFET 控制输出，软件按高电平开启、低电平关闭设计。不开发 USB CDC，不使用 PC13 或 PWM 控制 MOSFET。
+- 原因：用户已确定最终通信与控制架构；USART1 系统 Bootloader 也已通过当前 ATK-MO340P 链路完成只读连接和 Flash 备份。
+- 替代方案：USB CDC；PC13 控制；继电器或 PWM；这些方案本轮不采用。
+- 依据：用户当前工程决策；`docs/进口芯STM32F103C8T6焊针下/STM32F103C8T6核心板硬件资料/STM32F103C8T6-MICRO-原理图.pdf` 第 1 页；`logs/stm32_uart_bootloader/connection_115200.log`。
+- 影响范围：`firmware/stm32f103_uart_magnet/`、`drivers/stm32_magnet_uart.py`、后续 Jetson 串口集成与电气验证。
+- 当前状态：固件和离线驱动已实现并编译；尚未烧录或执行 PB12 实机输出测试。
+- 需要重新评估的条件：实际 MOSFET 模块空载测试证明输入极性或 3.3 V 兼容性与该决定不符，或硬件架构改变。

@@ -1,0 +1,21 @@
+Backup purpose: STM32 UART magnet controller pre-flash backup
+Backup time (local): 2026-07-29T12:27:25.3297434+08:00
+MCU family reported by bootloader: STM32F101/F102/F103 Medium-density
+Project target part: STM32F103C8T6
+Chip ID: 0x410
+Revision ID: unavailable over this UART bootloader connection
+Bootloader protocol version: 2.2
+CPU: Cortex-M3
+Flash size register address: 0x1FFFF7E0
+Flash size register value: 0x0040 (64 KBytes)
+Flash start address: 0x08000000
+Read length: 0x10000 (65536 bytes)
+Read protection: RDP 0xA5, Level 0 (no protection)
+UART adapter: USB-Enhanced-SERIAL CH343
+Port: COM15
+PNPDeviceID: USB\VID_1A86&PID_55D3\5B7A030191
+VID/PID: 1A86:55D3
+Driver: CH343SER_A64, version 2.2.2026.5, status OK
+CubeProgrammer: 2.23.0
+CLI: C:\Program Files\STMicroelectronics\STM32Cube\STM32CubeProgrammer\bin\STM32_Programmer_CLI.exe
+Connection: 115200 baud, 8 data bits, even parity, 1 stop bit, flow control off

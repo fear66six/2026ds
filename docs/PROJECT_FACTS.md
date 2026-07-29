@@ -81,3 +81,33 @@
 - 适用范围：资料包内的固件候选
 - 最后核查时间：2026-07-29
 - 备注：不代表当前实机已烧录这些版本；缓存哈希仅用于定位和变更检测。
+
+## F-009 当前 STM32 可通过 COM15 的 USART1 系统 Bootloader 只读访问
+
+- 结论：ATK-MO340P 对应 Windows 设备 `USB-Enhanced-SERIAL CH343 (COM15)`，VID/PID 为 `1A86:55D3`。STM32CubeProgrammer 2.23.0 以 115200、8E1、无流控成功连接，返回 Chip ID `0x410`、Bootloader protocol `2.2`；Flash-size 系统寄存器 `0x1FFFF7E0` 返回 `0x0040`（64 KiB），RDP 为 `0xA5` Level 0。已从 `0x08000000` 读取 65,536 字节完整备份。
+- 来源：`logs/stm32_uart_bootloader/connection_115200.log`；`logs/stm32_uart_bootloader/flash_size_register.log`；`logs/stm32_uart_bootloader/option_bytes_display.log`；`backup/stm32_before_uart_magnet/backup_manifest.json`
+- 来源位置：CubeProgrammer 连接输出、系统寄存器读取结果、Option Bytes 只读显示和备份清单
+- 可信等级：A（当前设备只读查询与实际备份产物）
+- 适用范围：2026-07-29 本次通过 COM15 连接的当前 STM32；COM 号以后可能变化
+- 最后核查时间：2026-07-29
+- 备注：CubeProgrammer 的系列默认显示为 128 KiB 并带容量警告，实际容量以芯片 Flash-size 寄存器的 64 KiB 为准；UART Bootloader 未返回 Revision ID。F-009 所述只读检查阶段未执行擦除、写入、启动或 Option Bytes 修改；后续经明确授权的写入另见 F-010。
+
+## F-010 USART1 电磁铁控制固件已通过 UART Bootloader 写入并复核
+
+- 结论：用户给出明确烧录授权后，CubeProgrammer 2.23.0 通过 COM15 将 `firmware.hex` 写入 `0x08000000`，仅擦除内部页 0 至 3，并返回 `Download verified successfully`。随后独立回读 3,648 字节，SHA256 与构建 BIN 相同。
+- 来源：`logs/stm32_uart_bootloader/program_and_verify.log`；`logs/stm32_uart_bootloader/post_flash_readback.log`；`FLASHING_REPORT.md`
+- 来源位置：下载日志的擦除范围、Verify 结果和回读日志；回读 SHA256 为 `705FD75A48CC55A15B7E25AA352D7E1C2F98CFF57FA66C3717D600D36B33B868`
+- 可信等级：A（当前设备实际烧录、Verify 和独立回读）
+- 适用范围：2026-07-29 当前通过 COM15 连接的 STM32
+- 最后核查时间：2026-07-29
+- 备注：烧录命令阶段未执行 Go/Start、烧录后复位、Option Bytes 或 RDP 修改；之后用户已手动恢复 BOOT0 并复位，应用层测试结果见 F-011。
+
+## F-011 烧录后 USART1 应用通信与默认关闭状态已通过实机验证
+
+- 结论：用户将 BOOT0 恢复为 0 并复位后，通过 ATK-MO340P 的 COM15 以 115200、8N1、无流控通信。`MAGNET_OFF` 返回 `OK OFF`，连续 10 次 `PING` 均返回 `PONG`，`GET_STATUS` 返回 `STATUS MAGNET=0 FAULT=0`。
+- 来源：`logs/stm32_uart_bootloader/usart1_runtime_test.log`；`USART1_TEST_REPORT.md`
+- 来源位置：完整收发日志
+- 可信等级：A（当前设备实机串口测试）
+- 适用范围：2026-07-29 当前烧录固件和 ATK-MO340P COM15 链路
+- 最后核查时间：2026-07-29
+- 备注：测试未发送 `MAGNET_ON`；MOSFET、电磁铁和负载电源仍未连接。板载 Micro-USB 因固件不实现 USB 设备栈而出现 Windows Code 43，不影响独立的 COM15 USART1 链路。

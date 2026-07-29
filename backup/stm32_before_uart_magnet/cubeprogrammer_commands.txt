@@ -1,0 +1,9 @@
+READ-ONLY COMMANDS USED
+
+STM32_Programmer_CLI.exe -c port=COM15 br=115200 P=EVEN db=8 sb=1 fc=OFF
+STM32_Programmer_CLI.exe -c port=COM15 br=115200 P=EVEN db=8 sb=1 fc=OFF -r16 0x1FFFF7E0 1
+STM32_Programmer_CLI.exe -c port=COM15 br=115200 P=EVEN db=8 sb=1 fc=OFF -ob displ
+STM32_Programmer_CLI.exe -c port=COM15 br=115200 P=EVEN db=8 sb=1 fc=OFF -u 0x08000000 0x10000 D:\diansai\2026\backup\stm32_before_uart_magnet\flash_backup.bin
+
+No erase, write, download, go/start, reset, read-unprotect, or Option Bytes modification command was executed.
+

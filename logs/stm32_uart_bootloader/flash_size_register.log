@@ -1,0 +1,1 @@
+﻿Command: STM32_Programmer_CLI.exe -c port=COM15 br=115200 P=EVEN db=8 sb=1 fc=OFF -r16 0x1FFFF7E0 1 ExitCode: 0 Timestamp: 2026-07-29T12:26:57.6421555+08:00  System.Object[]

@@ -1,0 +1,62 @@
+﻿AUTHORIZED BY USER PHRASE: 确认通过ATK-MO340P烧录
+Command: STM32_Programmer_CLI.exe 
+-c port=COM15 br=115200 P=EVEN db=8 sb=1 fc=OFF -d D:\diansai\2026\firmware\stm32f103_uart_magnet\build\firmware.hex -v
+ExitCode: 
+0
+Started: 
+2026-07-29T12:45:30.9303703+08:00
+Finished: 
+2026-07-29T12:45:34.5682048+08:00
+
+      -------------------------------------------------------------------
+                       STM32CubeProgrammer v2.23.0                  
+      -------------------------------------------------------------------
+
+Serial Port COM15 is successfully opened.
+Port configuration: parity = even, baudrate = 115200, data-bit = 8,                     stop-bit = 1.0, flow-control = off
+Activating device: OK
+Board       : --
+Chip ID: 0x410 
+BootLoader protocol version: 2.2
+Device name : STM32F101/F102/F103 Medium-density
+NVM size    : 128 KBytes (default)
+Warning: Available NVM size can be less than displayed value depending on part number
+Device type : MCU
+Revision ID : --  
+Device CPU  : Cortex-M3
+
+
+Opening and parsing file: firmware.hex
+
+
+Memory Programming ...
+  File          : firmware.hex
+  Size          : 3.56 KB 
+  Address       : 0x08000000
+
+
+Erasing memory corresponding to segment 0:
+Erasing internal memory sectors [0 3]
+Download in Progress:
+�������������������������������������������������� 0%
+���  6%��� 13%���� 20%��� 26%��� 33%���� 40%��� 46%��� 53%���� 60%��� 66%��� 73%���� 80%��� 86%��� 93%���� 100%
+
+File download complete
+Time elapsed during download operation: 00:00:00.575
+
+
+
+Verifying...
+
+
+File size < 32KB legacy verify will be used
+Read progress:
+�������������������������������������������������� 50%
+���  7%���� 14%��� 21%���� 28%��� 35%���� 42%��� 49%���� 56%��� 63%���� 70%��� 77%���� 84%��� 91%���� 98%� 100%
+
+Time elapsed during verifying operation: 00:00:00.406
+
+
+Download verified successfully
+
+
