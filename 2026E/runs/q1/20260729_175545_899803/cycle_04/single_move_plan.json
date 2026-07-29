@@ -1,0 +1,28 @@
+{
+  "cycle_index": 4,
+  "template_id": "P1",
+  "source_pose_paper": {
+    "x_mm": 38.0,
+    "y_mm": 48.0,
+    "angle_deg": 17.0
+  },
+  "target_pose_paper": {
+    "x_mm": 69.0,
+    "y_mm": 176.5,
+    "angle_deg": 0.0
+  },
+  "source_pose_robot": null,
+  "target_pose_robot": null,
+  "pick_point_paper": [
+    38.0,
+    48.0
+  ],
+  "pick_point_robot": null,
+  "approach_pose": null,
+  "transfer_pose": null,
+  "release_pose": null,
+  "rotation_delta_deg": -17.0,
+  "confidence": 0.98,
+  "reason_selected": "DYNAMIC_LOOKAHEAD",
+  "retry_index": 0
+}

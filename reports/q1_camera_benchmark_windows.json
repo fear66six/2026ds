@@ -1,0 +1,141 @@
+{
+  "hardware_run": true,
+  "timestamp": "2026-07-29T15:43:14+0800",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "opencv_version": "4.13.0",
+  "opencv_num_threads": 32,
+  "mode": "capture_display_detect",
+  "camera_index": 0,
+  "camera": {
+    "backend": "DSHOW",
+    "width": 848.0,
+    "height": 480.0,
+    "fps": 30.00003000003,
+    "fourcc": "YUY2",
+    "buffersize": -1.0,
+    "auto_exposure": -1.0,
+    "exposure": -6.0,
+    "gain": -1.0,
+    "white_balance": 4600.0,
+    "auto_white_balance": 1.0
+  },
+  "requested_width": 848,
+  "requested_height": 480,
+  "requested_fps": 30.0,
+  "requested_fourcc": "MJPG",
+  "common_mode_probe": [
+    {
+      "requested": {
+        "width": 640,
+        "height": 480,
+        "fps": 30.0,
+        "fourcc": "MJPG"
+      },
+      "actual": {
+        "backend": "DSHOW",
+        "width": 640.0,
+        "height": 480.0,
+        "fps": 30.00003000003,
+        "fourcc": "YUY2",
+        "buffersize": -1.0,
+        "auto_exposure": -1.0,
+        "exposure": -6.0,
+        "gain": -1.0,
+        "white_balance": 4600.0,
+        "auto_white_balance": 1.0
+      },
+      "read_ok": true,
+      "read_ms": 89.06319999732659
+    },
+    {
+      "requested": {
+        "width": 640,
+        "height": 480,
+        "fps": 30.0,
+        "fourcc": "YUYV"
+      },
+      "actual": {
+        "backend": "DSHOW",
+        "width": 640.0,
+        "height": 480.0,
+        "fps": 30.00003000003,
+        "fourcc": "YUY2",
+        "buffersize": -1.0,
+        "auto_exposure": -1.0,
+        "exposure": -6.0,
+        "gain": -1.0,
+        "white_balance": 4600.0,
+        "auto_white_balance": 1.0
+      },
+      "read_ok": true,
+      "read_ms": 85.96869999746559
+    },
+    {
+      "requested": {
+        "width": 1280,
+        "height": 720,
+        "fps": 30.0,
+        "fourcc": "MJPG"
+      },
+      "actual": {
+        "backend": "DSHOW",
+        "width": 1280.0,
+        "height": 720.0,
+        "fps": 30.00003000003,
+        "fourcc": "YUY2",
+        "buffersize": -1.0,
+        "auto_exposure": -1.0,
+        "exposure": -6.0,
+        "gain": -1.0,
+        "white_balance": 4600.0,
+        "auto_white_balance": 1.0
+      },
+      "read_ok": true,
+      "read_ms": 95.97070000017993
+    },
+    {
+      "requested": {
+        "width": 1280,
+        "height": 720,
+        "fps": 30.0,
+        "fourcc": "YUYV"
+      },
+      "actual": {
+        "backend": "DSHOW",
+        "width": 1280.0,
+        "height": 720.0,
+        "fps": 30.00003000003,
+        "fourcc": "YUY2",
+        "buffersize": -1.0,
+        "auto_exposure": -1.0,
+        "exposure": -6.0,
+        "gain": -1.0,
+        "white_balance": 4600.0,
+        "auto_white_balance": 1.0
+      },
+      "read_ok": true,
+      "read_ms": 89.2788000019209
+    }
+  ],
+  "frames_displayed_or_consumed": 300,
+  "capture_fps": 30.00754809865827,
+  "display_fps": 30.00920172152319,
+  "detect_fps": 3.623361332321382,
+  "read_ms_average": 33.29672133324493,
+  "read_ms_p50": 32.059199998911936,
+  "read_ms_p95": 47.70437499792024,
+  "read_ms_p99": 48.71825100297428,
+  "detect_ms_p50": 2.3563499980809866,
+  "detect_ms_p95": 13.578324999798497,
+  "possible_backlog_frames": 0,
+  "detector_dropped_frames": 263,
+  "failed_reads": 0,
+  "process_cpu_percent": 22.50690129114239,
+  "memory_rss_mb": null,
+  "result_age_ms": 76.36139999885927,
+  "linux_diagnostics": {
+    "video_devices": [],
+    "thermal_zones": [],
+    "tegrastats": null
+  }
+}

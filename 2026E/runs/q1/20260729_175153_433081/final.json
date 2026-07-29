@@ -1,0 +1,836 @@
+{
+  "completed": true,
+  "scene": {
+    "cycle_index": 4,
+    "image_path": "",
+    "pieces": [
+      {
+        "detected_id": 0,
+        "template_id": "P1",
+        "contour_px": [
+          [
+            [
+              220,
+              674
+            ]
+          ],
+          [
+            [
+              300,
+              674
+            ]
+          ],
+          [
+            [
+              364,
+              722
+            ]
+          ],
+          [
+            [
+              220,
+              754
+            ]
+          ]
+        ],
+        "vertices_px": [
+          [
+            220.0,
+            674.0
+          ],
+          [
+            300.0,
+            674.0
+          ],
+          [
+            364.0,
+            722.0
+          ],
+          [
+            220.0,
+            754.0
+          ]
+        ],
+        "vertices_mm": [
+          [
+            55.0,
+            168.5
+          ],
+          [
+            75.0,
+            168.5
+          ],
+          [
+            91.0,
+            180.5
+          ],
+          [
+            55.0,
+            188.5
+          ]
+        ],
+        "edge_lengths_mm": [
+          20.0,
+          20.0,
+          36.87817782917155,
+          20.0
+        ],
+        "inner_angles_deg": [
+          90.0,
+          143.13010235415598,
+          49.39870535499553,
+          77.47119229084849
+        ],
+        "center_mm": [
+          69.0,
+          176.5
+        ],
+        "angle_deg": 0.0,
+        "area_mm2": 480.0,
+        "edge_fit_rmse_mm": 0.0,
+        "template_match_score": 0.0,
+        "confidence": 0.98,
+        "region": "LOWER_TARGET",
+        "touches_boundary": false
+      },
+      {
+        "detected_id": 1,
+        "template_id": "P2",
+        "contour_px": [
+          [
+            [
+              220,
+              754
+            ]
+          ],
+          [
+            [
+              364,
+              722
+            ]
+          ],
+          [
+            [
+              524,
+              842
+            ]
+          ],
+          [
+            [
+              220,
+              794
+            ]
+          ]
+        ],
+        "vertices_px": [
+          [
+            220.0,
+            754.0
+          ],
+          [
+            364.0,
+            722.0
+          ],
+          [
+            524.0,
+            842.0
+          ],
+          [
+            220.0,
+            794.0
+          ]
+        ],
+        "vertices_mm": [
+          [
+            55.0,
+            188.5
+          ],
+          [
+            91.0,
+            180.5
+          ],
+          [
+            131.0,
+            210.5
+          ],
+          [
+            55.0,
+            198.5
+          ]
+        ],
+        "edge_lengths_mm": [
+          36.87817782917155,
+          50.0,
+          76.94153624668537,
+          10.0
+        ],
+        "inner_angles_deg": [
+          102.52880770915151,
+          130.6012946450045,
+          27.897271030947618,
+          98.9726266148964
+        ],
+        "center_mm": [
+          83.0,
+          194.5
+        ],
+        "angle_deg": 0.0,
+        "area_mm2": 1080.0,
+        "edge_fit_rmse_mm": 0.0,
+        "template_match_score": 0.0,
+        "confidence": 0.95,
+        "region": "LOWER_TARGET",
+        "touches_boundary": false
+      },
+      {
+        "detected_id": 2,
+        "template_id": "P3",
+        "contour_px": [
+          [
+            [
+              220,
+              794
+            ]
+          ],
+          [
+            [
+              524,
+              842
+            ]
+          ],
+          [
+            [
+              620,
+              914
+            ]
+          ],
+          [
+            [
+              220,
+              914
+            ]
+          ]
+        ],
+        "vertices_px": [
+          [
+            220.0,
+            794.0
+          ],
+          [
+            524.0,
+            842.0
+          ],
+          [
+            620.0,
+            914.0
+          ],
+          [
+            220.0,
+            914.0
+          ]
+        ],
+        "vertices_mm": [
+          [
+            55.0,
+            198.5
+          ],
+          [
+            131.0,
+            210.5
+          ],
+          [
+            155.0,
+            228.5
+          ],
+          [
+            55.0,
+            228.5
+          ]
+        ],
+        "edge_lengths_mm": [
+          76.94153624668537,
+          30.0,
+          100.0,
+          30.0
+        ],
+        "inner_angles_deg": [
+          81.02737338510362,
+          152.1027289690524,
+          36.86989764584401,
+          90.0
+        ],
+        "center_mm": [
+          99.0,
+          216.5
+        ],
+        "angle_deg": 0.0,
+        "area_mm2": 2040.0,
+        "edge_fit_rmse_mm": 0.0,
+        "template_match_score": 0.0,
+        "confidence": 0.9199999999999999,
+        "region": "LOWER_TARGET",
+        "touches_boundary": false
+      },
+      {
+        "detected_id": 3,
+        "template_id": "P4",
+        "contour_px": [
+          [
+            [
+              300,
+              674
+            ]
+          ],
+          [
+            [
+              620,
+              674
+            ]
+          ],
+          [
+            [
+              620,
+              914
+            ]
+          ]
+        ],
+        "vertices_px": [
+          [
+            300.0,
+            674.0
+          ],
+          [
+            620.0,
+            674.0
+          ],
+          [
+            620.0,
+            914.0
+          ]
+        ],
+        "vertices_mm": [
+          [
+            75.0,
+            168.5
+          ],
+          [
+            155.0,
+            168.5
+          ],
+          [
+            155.0,
+            228.5
+          ]
+        ],
+        "edge_lengths_mm": [
+          80.0,
+          60.0,
+          100.0
+        ],
+        "inner_angles_deg": [
+          36.86989764584401,
+          90.0,
+          53.13010235415599
+        ],
+        "center_mm": [
+          128.33333333333334,
+          188.5
+        ],
+        "angle_deg": 0.0,
+        "area_mm2": 2400.0,
+        "edge_fit_rmse_mm": 0.0,
+        "template_match_score": 0.0,
+        "confidence": 0.89,
+        "region": "LOWER_TARGET",
+        "touches_boundary": false
+      }
+    ],
+    "templates": {
+      "P1": {
+        "template_id": "P1",
+        "status": "PLACED_OK",
+        "detected_piece": {
+          "detected_id": 0,
+          "template_id": "P1",
+          "contour_px": [
+            [
+              [
+                220,
+                674
+              ]
+            ],
+            [
+              [
+                300,
+                674
+              ]
+            ],
+            [
+              [
+                364,
+                722
+              ]
+            ],
+            [
+              [
+                220,
+                754
+              ]
+            ]
+          ],
+          "vertices_px": [
+            [
+              220.0,
+              674.0
+            ],
+            [
+              300.0,
+              674.0
+            ],
+            [
+              364.0,
+              722.0
+            ],
+            [
+              220.0,
+              754.0
+            ]
+          ],
+          "vertices_mm": [
+            [
+              55.0,
+              168.5
+            ],
+            [
+              75.0,
+              168.5
+            ],
+            [
+              91.0,
+              180.5
+            ],
+            [
+              55.0,
+              188.5
+            ]
+          ],
+          "edge_lengths_mm": [
+            20.0,
+            20.0,
+            36.87817782917155,
+            20.0
+          ],
+          "inner_angles_deg": [
+            90.0,
+            143.13010235415598,
+            49.39870535499553,
+            77.47119229084849
+          ],
+          "center_mm": [
+            69.0,
+            176.5
+          ],
+          "angle_deg": 0.0,
+          "area_mm2": 480.0,
+          "edge_fit_rmse_mm": 0.0,
+          "template_match_score": 0.0,
+          "confidence": 0.98,
+          "region": "LOWER_TARGET",
+          "touches_boundary": false
+        },
+        "expected_target_vertices_mm": [
+          [
+            55.0,
+            168.5
+          ],
+          [
+            75.0,
+            168.5
+          ],
+          [
+            91.0,
+            180.5
+          ],
+          [
+            55.0,
+            188.5
+          ]
+        ],
+        "center_error_mm": 0.0,
+        "angle_error_deg": 0.0,
+        "max_vertex_error_mm": 0.0,
+        "last_seen_cycle": 4,
+        "retry_count": 0
+      },
+      "P2": {
+        "template_id": "P2",
+        "status": "PLACED_OK",
+        "detected_piece": {
+          "detected_id": 1,
+          "template_id": "P2",
+          "contour_px": [
+            [
+              [
+                220,
+                754
+              ]
+            ],
+            [
+              [
+                364,
+                722
+              ]
+            ],
+            [
+              [
+                524,
+                842
+              ]
+            ],
+            [
+              [
+                220,
+                794
+              ]
+            ]
+          ],
+          "vertices_px": [
+            [
+              220.0,
+              754.0
+            ],
+            [
+              364.0,
+              722.0
+            ],
+            [
+              524.0,
+              842.0
+            ],
+            [
+              220.0,
+              794.0
+            ]
+          ],
+          "vertices_mm": [
+            [
+              55.0,
+              188.5
+            ],
+            [
+              91.0,
+              180.5
+            ],
+            [
+              131.0,
+              210.5
+            ],
+            [
+              55.0,
+              198.5
+            ]
+          ],
+          "edge_lengths_mm": [
+            36.87817782917155,
+            50.0,
+            76.94153624668537,
+            10.0
+          ],
+          "inner_angles_deg": [
+            102.52880770915151,
+            130.6012946450045,
+            27.897271030947618,
+            98.9726266148964
+          ],
+          "center_mm": [
+            83.0,
+            194.5
+          ],
+          "angle_deg": 0.0,
+          "area_mm2": 1080.0,
+          "edge_fit_rmse_mm": 0.0,
+          "template_match_score": 0.0,
+          "confidence": 0.95,
+          "region": "LOWER_TARGET",
+          "touches_boundary": false
+        },
+        "expected_target_vertices_mm": [
+          [
+            55.0,
+            188.5
+          ],
+          [
+            91.0,
+            180.5
+          ],
+          [
+            131.0,
+            210.5
+          ],
+          [
+            55.0,
+            198.5
+          ]
+        ],
+        "center_error_mm": 0.0,
+        "angle_error_deg": 0.0,
+        "max_vertex_error_mm": 0.0,
+        "last_seen_cycle": 4,
+        "retry_count": 0
+      },
+      "P3": {
+        "template_id": "P3",
+        "status": "PLACED_OK",
+        "detected_piece": {
+          "detected_id": 2,
+          "template_id": "P3",
+          "contour_px": [
+            [
+              [
+                220,
+                794
+              ]
+            ],
+            [
+              [
+                524,
+                842
+              ]
+            ],
+            [
+              [
+                620,
+                914
+              ]
+            ],
+            [
+              [
+                220,
+                914
+              ]
+            ]
+          ],
+          "vertices_px": [
+            [
+              220.0,
+              794.0
+            ],
+            [
+              524.0,
+              842.0
+            ],
+            [
+              620.0,
+              914.0
+            ],
+            [
+              220.0,
+              914.0
+            ]
+          ],
+          "vertices_mm": [
+            [
+              55.0,
+              198.5
+            ],
+            [
+              131.0,
+              210.5
+            ],
+            [
+              155.0,
+              228.5
+            ],
+            [
+              55.0,
+              228.5
+            ]
+          ],
+          "edge_lengths_mm": [
+            76.94153624668537,
+            30.0,
+            100.0,
+            30.0
+          ],
+          "inner_angles_deg": [
+            81.02737338510362,
+            152.1027289690524,
+            36.86989764584401,
+            90.0
+          ],
+          "center_mm": [
+            99.0,
+            216.5
+          ],
+          "angle_deg": 0.0,
+          "area_mm2": 2040.0,
+          "edge_fit_rmse_mm": 0.0,
+          "template_match_score": 0.0,
+          "confidence": 0.9199999999999999,
+          "region": "LOWER_TARGET",
+          "touches_boundary": false
+        },
+        "expected_target_vertices_mm": [
+          [
+            55.0,
+            198.5
+          ],
+          [
+            131.0,
+            210.5
+          ],
+          [
+            155.0,
+            228.5
+          ],
+          [
+            55.0,
+            228.5
+          ]
+        ],
+        "center_error_mm": 0.0,
+        "angle_error_deg": 0.0,
+        "max_vertex_error_mm": 0.0,
+        "last_seen_cycle": 4,
+        "retry_count": 0
+      },
+      "P4": {
+        "template_id": "P4",
+        "status": "PLACED_OK",
+        "detected_piece": {
+          "detected_id": 3,
+          "template_id": "P4",
+          "contour_px": [
+            [
+              [
+                300,
+                674
+              ]
+            ],
+            [
+              [
+                620,
+                674
+              ]
+            ],
+            [
+              [
+                620,
+                914
+              ]
+            ]
+          ],
+          "vertices_px": [
+            [
+              300.0,
+              674.0
+            ],
+            [
+              620.0,
+              674.0
+            ],
+            [
+              620.0,
+              914.0
+            ]
+          ],
+          "vertices_mm": [
+            [
+              75.0,
+              168.5
+            ],
+            [
+              155.0,
+              168.5
+            ],
+            [
+              155.0,
+              228.5
+            ]
+          ],
+          "edge_lengths_mm": [
+            80.0,
+            60.0,
+            100.0
+          ],
+          "inner_angles_deg": [
+            36.86989764584401,
+            90.0,
+            53.13010235415599
+          ],
+          "center_mm": [
+            128.33333333333334,
+            188.5
+          ],
+          "angle_deg": 0.0,
+          "area_mm2": 2400.0,
+          "edge_fit_rmse_mm": 0.0,
+          "template_match_score": 0.0,
+          "confidence": 0.89,
+          "region": "LOWER_TARGET",
+          "touches_boundary": false
+        },
+        "expected_target_vertices_mm": [
+          [
+            75.0,
+            168.5
+          ],
+          [
+            155.0,
+            168.5
+          ],
+          [
+            155.0,
+            228.5
+          ]
+        ],
+        "center_error_mm": 0.0,
+        "angle_error_deg": 0.0,
+        "max_vertex_error_mm": 0.0,
+        "last_seen_cycle": 4,
+        "retry_count": 0
+      }
+    },
+    "placed_templates": [
+      "P1",
+      "P2",
+      "P3",
+      "P4"
+    ],
+    "remaining_templates": [],
+    "image_quality": {
+      "sharpness": 218.9356100689434,
+      "brightness": 49.432739097322425,
+      "motion_score": 0.0
+    },
+    "paper_valid": true,
+    "scene_valid": true,
+    "warnings": [],
+    "timings_ms": {
+      "rectify_ms": 0.0,
+      "segmentation_ms": 0.0,
+      "contour_extract_ms": 0.0,
+      "edge_refine_ms": 0.0,
+      "template_match_ms": 0.0,
+      "postprocess_ms": 1.5074999973876402,
+      "total_analysis_ms": 1.5093999973032624,
+      "audit_ms": 0.01219999830937013
+    }
+  },
+  "audit": {
+    "all_complete": true,
+    "placed_ok": [
+      "P1",
+      "P2",
+      "P3",
+      "P4"
+    ],
+    "placed_offset": [],
+    "remaining": [],
+    "moved_remaining": [],
+    "release_failed_template": null,
+    "missing_templates": [],
+    "requires_reanalysis": false,
+    "warnings": []
+  }
+}

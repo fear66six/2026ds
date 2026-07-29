@@ -1,0 +1,64 @@
+"""E题拼图装置 - 全局配置（黑底白片）"""
+
+# A4 纸张尺寸 (cm)
+A4_WIDTH_CM = 21.0
+A4_HEIGHT_CM = 29.7
+DIVIDER_Y_CM = A4_HEIGHT_CM / 2  # 上下分界线
+
+# 目标矩形尺寸 (cm) — 图 2 四片碎片拼接目标
+TARGET_WIDTH_CM = 10.0
+TARGET_HEIGHT_CM = 6.0
+
+# 目标矩形在下半区的放置位置（左上角，cm）
+TARGET_ORIGIN_X_CM = (A4_WIDTH_CM - TARGET_WIDTH_CM) / 2
+TARGET_ORIGIN_Y_CM = DIVIDER_Y_CM + 2.0
+
+# 视觉检测
+MIN_PIECE_AREA_CM2 = 0.8
+MAX_PIECE_AREA_CM2 = 35.0       # 常规单块上限
+MAX_PIECE_AREA_SOFT_CM2 = 52.0  # 实拍标定偏差时仍保留的超大单块
+VERTEX_MATCH_TOLERANCE_CM = 2.0  # 评分：相邻顶点距离 ≤ 2cm
+
+# 反光/眩光过滤（灰、边缘模糊、形状不规则）
+GLARE_MAX_COMPACTNESS = 0.15   # 4πA/P²，越低越毛糙
+GLARE_MAX_SOLIDITY = 0.82      # 面积/凸包面积
+GLARE_MAX_MEAN_GRAY = 138      # 轮廓内平均灰度（真白片更高）
+GLARE_BRIGHT_V_MIN = 140       # 从粘连块中提取真白片时的 V 下限
+
+# HSV 颜色范围 — 白碎片（黑底，摄像头略暗时 V 阈值放低）
+HSV_PIECES = [
+    ((0, 0, 100), (180, 100, 255)),
+]
+
+DEFAULT_HSV_RANGES = HSV_PIECES
+
+# 黑底纸面 / 白线分界
+BLACK_PAPER_GRAY_THRESH = 90
+WHITE_DIVIDER_GRAY_THRESH = 160
+
+# 外框（黑纸垫）检测：先找外矩形，再在内部找碎片
+MAT_INSET_CM = 0.8           # 碎片检测区域内缩，避开外框白边
+MAT_MIN_AREA_FRAC = 0.08     # 外框至少占画面 8%
+MAT_MAX_AREA_FRAC = 0.78     # 外框不超过 78%（避免整幅图误判）
+MAT_ASPECT_TOL = 0.22        # 允许 A4 竖向/横向两种像素比例
+
+# 运行
+CAMERA_INDEX = 0
+CAMERA_CROP_LEFT_FRAC = 0.18  # 实拍时裁掉画面左侧（笔记本等干扰）
+CAMERA_WIDTH = 848            # 摄像头采集宽度（降低可减轻卡顿）
+CAMERA_HEIGHT = 480
+DISPLAY_SCALE = 0.65
+
+# 实时摄像头：降低检测频率以提升显示帧率
+LIVE_DETECT_INTERVAL = 6       # 保留：兼容旧逻辑
+LIVE_DETECT_MIN_INTERVAL_S = 0.28  # 检测线程最快约 3.5 次/秒
+LIVE_PAPER_REFRESH = 24        # 纸框缓存更久，少做重型外框检测
+LIVE_DETECT_MAX_WIDTH = 480    # 检测缩略图（越小越快）
+
+# 下位机串口
+SERIAL_PORT = ""
+SERIAL_BAUD = 115200
+SERIAL_TIMEOUT_S = 30.0
+FORCE_DRY_RUN = False
+STEP_DELAY_S = 2.0
+VERIFY_DELAY_S = 1.5

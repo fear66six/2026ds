@@ -1,0 +1,35 @@
+{
+  "observe_pose": {
+    "value": [200.0, 0.0, 160.0, -90.0, 0.0, -60.0, 1500],
+    "source": "TaskSuite_E/board_roi_config.h",
+    "implementation": "TaskSuite_E/system_task_handle.cpp::move_observe",
+    "behavior": "先到同一XY的Z=200，再到OBS_Z；复位含义为观察位而非机械零点",
+    "confidence": "A"
+  },
+  "nexarm_uart": {
+    "source": "docs/NexArm机械臂/1.教程资料/6. 外部主控二次开发/02 程序源码/UART_Control/nexarm_sdk.py",
+    "class": "NexArmClient",
+    "calls": ["open", "set_pose", "get_current_coords", "close"],
+    "baudrate": 1000000,
+    "confidence": "A",
+    "note": "示例中的/dev/ttyUSB0不作为固定设备节点；SDK未暴露急停或set_torque函数"
+  },
+  "magnet_uart": {
+    "source": "drivers/stm32_magnet_uart.py",
+    "protocol_source": "firmware/stm32f103_uart_magnet/PROTOCOL.md",
+    "timeout_range_ms": [50, 500],
+    "commands": ["MAGNET_ON <timeout_ms>", "MAGNET_OFF", "EMERGENCY_OFF"],
+    "hold_policy": "lease=协议MAX_TIMEOUT_MS，renew_interval=lease//2，finally强制关闭",
+    "confidence": "A"
+  },
+  "unknown_real_parameters": [
+    "A4到机械臂坐标标定",
+    "抓取高度",
+    "释放高度",
+    "安全高度",
+    "动作持续时间",
+    "电磁铁吸合稳定时间",
+    "释放侧移方向与距离",
+    "机械臂工作区边界"
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "input": "backup/2026E/test.png",
+  "image_shape": [1262, 892, 3],
+  "old_pipeline_runs_ms": [
+    1699.9930000019958,
+    1509.9864000003436,
+    1544.2136999990907,
+    1565.6050999969011,
+    1596.3408000025083
+  ],
+  "old_pipeline_mean_ms": 1583.227800000168,
+  "old_result": {"pieces": 4, "assignments": 4, "steps": 5},
+  "optimized_static_analysis_runs_ms": [
+    274.6627000014996,
+    267.1879999979865,
+    265.8722999985912,
+    243.42840000463184,
+    259.521499996481
+  ],
+  "optimized_static_analysis_mean_ms": 262.134579999838,
+  "optimized_result": {
+    "pieces": 4,
+    "scene_valid": true,
+    "template_to_detected": {"P1": 0, "P2": 2, "P3": 3, "P4": 1}
+  },
+  "speedup": 6.04,
+  "optimization": "缓存16个碎片-模板刚性匹配结果，避免4!排列中重复计算；模板几何和代价公式未改变。",
+  "measurement_note": "同一离线输入；未使用摄像头或硬件。"
+}

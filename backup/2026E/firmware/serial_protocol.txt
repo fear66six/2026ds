@@ -1,0 +1,27 @@
+/**
+ * E题拼图装置 — 下位机串口协议参考（STM32/Arduino）
+ *
+ * 115200 8N1，每行一条命令，上位机 python main.py --run --port COMx
+ *
+ * 命令            响应        说明
+ * PING            PONG        握手
+ * HOME            OK          回零
+ * PICK x y        OK          移动到 (x,y) cm 并抓取
+ * MOVE x y a      OK          移动到 (x,y) 并旋转 a 度（平面内，不翻转）
+ * PLACE           OK          释放
+ * DONE            OK          蜂鸣器+LED 完成指示
+ *
+ * 坐标系：A4 左上角为 (0,0)，x 向右，y 向下，单位 cm
+ * 示例：PICK 5.25 4.50  →  MOVE 10.50 19.35 -13.70  →  PLACE
+ */
+
+// Arduino 伪代码示例：
+// void loop() {
+//   if (Serial.available()) {
+//     String cmd = Serial.readStringUntil('\n');
+//     if (cmd.startsWith("PING")) { Serial.println("PONG"); }
+//     else if (cmd.startsWith("HOME")) { home(); Serial.println("OK"); }
+//     else if (cmd.startsWith("PICK")) { sscanf(...); pick(); Serial.println("OK"); }
+//     ...
+//   }
+// }

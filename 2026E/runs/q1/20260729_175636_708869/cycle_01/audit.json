@@ -1,0 +1,17 @@
+{
+  "all_complete": false,
+  "placed_ok": [
+    "P2"
+  ],
+  "placed_offset": [],
+  "remaining": [
+    "P1",
+    "P3",
+    "P4"
+  ],
+  "moved_remaining": [],
+  "release_failed_template": null,
+  "missing_templates": [],
+  "requires_reanalysis": false,
+  "warnings": []
+}

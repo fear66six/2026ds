@@ -1,0 +1,18 @@
+{
+  "baseline": "backup/2026E/q1",
+  "files": [
+    {"file": "main.py", "previous_use": "多入口参数解析与旧流程分派", "keep": true, "refactor": true, "delete": false, "reason": "简化为依赖创建、门禁和Q1Controller启动"},
+    {"file": "camera_run.py", "previous_use": "连续实时检测并以检测结果决定执行", "keep": false, "refactor": false, "delete": true, "reason": "正式决策改为观察位静态Snapshot"},
+    {"file": "device_run.py", "previous_use": "一次性执行四块动作", "keep": false, "refactor": false, "delete": true, "reason": "违反每轮只执行一块"},
+    {"file": "executor.py", "previous_use": "HOME/PICK/MOVE/PLACE/DONE虚构文本协议", "keep": false, "refactor": false, "delete": true, "reason": "正式链路改用厂商NexArmClient"},
+    {"file": "motion.py", "previous_use": "一次生成四块MotionStep", "keep": true, "refactor": true, "delete": false, "reason": "替换为SingleMovePlan"},
+    {"file": "pipeline.py", "previous_use": "检测、模板分配、四块规划绑定", "keep": false, "refactor": false, "delete": true, "reason": "拆分为Analyzer/Auditor/Selector"},
+    {"file": "live_detect.py", "previous_use": "缓存连续检测结果", "keep": false, "refactor": false, "delete": true, "reason": "不再作为正式执行依据"},
+    {"file": "vision.py", "previous_use": "A4、分割、轮廓和顶点检测", "keep": true, "refactor": false, "delete": false, "reason": "复用已存在静态视觉算法"},
+    {"file": "geometry.py", "previous_use": "刚性匹配和几何计算", "keep": true, "refactor": false, "delete": false, "reason": "复用NumPy几何实现"},
+    {"file": "pieces.py", "previous_use": "固定P1/P2/P3/P4模板", "keep": true, "refactor": false, "delete": false, "reason": "模板几何不得改变"},
+    {"file": "puzzle_solver.py", "previous_use": "模板全局一一匹配", "keep": true, "refactor": false, "delete": false, "reason": "复用固定模板分配"},
+    {"file": "animator.py", "previous_use": "旧四块动画", "keep": false, "refactor": false, "delete": true, "reason": "与新状态机无关"},
+    {"file": "simulator.py", "previous_use": "旧散落图生成", "keep": false, "refactor": false, "delete": true, "reason": "由SimulationWorld替代"}
+  ]
+}
