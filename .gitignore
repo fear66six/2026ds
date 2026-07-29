@@ -1,0 +1,55 @@
+# Generated document-search cache
+/.cache/
+
+# Local vendor/reference archive (large, immutable, and redistributability varies)
+/docs/**
+!/docs/README.md
+!/docs/PROJECT_FACTS.md
+!/docs/DECISIONS.md
+!/docs/TODO_VERIFY.md
+
+# Python caches and local environments
+**/__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# IDE and OS-local files
+.idea/
+.vscode/
+*.code-workspace
+Thumbs.db
+Desktop.ini
+
+# Native/embedded build products
+*.o
+*.d
+*.crf
+*.dep
+*.lst
+*.map
+*.elf
+*.axf
+*.hex
+*.bin
+*.uf2
+*.bak
+*.Bak
+
+# Large installers, archives, media, disk images, and CAD exchange files
+*.exe
+*.apk
+*.zip
+*.rar
+*.7z
+*.gz
+*.mp4
+*.avi
+*.mov
+*.img
+*.iso
+*.stp
+*.step
+*.STEP
+*.dwg
+*.DWG
