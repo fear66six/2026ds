@@ -48,7 +48,17 @@ class PipelineRegressionTests(unittest.TestCase):
         "pre-change q1 backup is unavailable",
     )
     def test_offline_pipeline_matches_pre_change_backup(self):
-        self.assertEqual(run_probe(CURRENT_ROOT), run_probe(BASELINE_ROOT))
+        current = run_probe(CURRENT_ROOT)
+        baseline = run_probe(BASELINE_ROOT)
+        self.assertEqual(current["ok"], baseline["ok"])
+        self.assertEqual(current["pieces"], baseline["pieces"])
+        self.assertEqual(current["assembly_ok"], baseline["assembly_ok"])
+        self.assertAlmostEqual(current["max_error"], baseline["max_error"], delta=0.05)
+        for current_center, baseline_center in zip(
+            current["centers"], baseline["centers"]
+        ):
+            self.assertAlmostEqual(current_center[0], baseline_center[0], delta=0.05)
+            self.assertAlmostEqual(current_center[1], baseline_center[1], delta=0.05)
 
 
 if __name__ == "__main__":

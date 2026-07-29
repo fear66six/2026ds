@@ -1,5 +1,18 @@
 # Q1 摄像头调优指南
 
+## 当前默认与实时命令
+
+Windows 默认请求 640×480、30 FPS、MJPG；`auto` 后端在 Windows 按 DSHOW、MSMF、CAP_ANY 顺序尝试。启动时会打印后端、实际宽高、`CAP_PROP_FPS`、FOURCC 和不生效的设置，画面中还会持续显示实际读取的 Capture FPS。
+
+```powershell
+cd 2026E
+python -m q1.main --camera --camera-index 1 `
+  --camera-backend dshow --camera-width 640 --camera-height 480 `
+  --camera-fps 30 --camera-fourcc MJPG
+```
+
+若 DSHOW 无法打开或真实读取帧率低，再用完全相同参数比较 `--camera-backend msmf`。不要回到 848×480 作为默认模式，除非基准确认它是该摄像头的原生高帧率模式。
+
 ## 先跑三组基准
 
 在项目根目录运行，每组至少 300 帧：
@@ -87,3 +100,5 @@ python tools/q1_camera_benchmark.py capture_display_detect --opencv-threads 4
 - 检测期间当前帧持续变化，无历史队列积压。
 - result age 可见，按键响应正常。
 - 若硬件达不到，保存实际模式和报告，不修改结果冒充达标。
+- 纸框锁定后，纸外白块和跨安全 ROI 边界的白块显示为红色拒绝候选。
+- 连续三次四模板匹配稳定后才显示 READY。
