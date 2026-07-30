@@ -1,56 +1,90 @@
-"""Single production Q1 closed-loop entry point."""
+"""Q1 command line entry points for planning and full execution."""
 
 from __future__ import annotations
 
 import argparse
 import json
+import sys
+from datetime import datetime
 from pathlib import Path
 
 from .analyzer import SceneAnalyzer
 from .calibration import ArmCoordinateMapper
 from .camera import SnapshotCamera
 from .controller import Q1Controller
-from .executors.nexarm import NexArmRobotExecutor
-from .magnet import STM32MagnetController
 from .runtime_config import Q1RuntimeConfig
+from .workflow import capture_and_plan
 
 
-CONFIRM_TOKEN = "RUN_Q1"
+PLAN_CONFIRM_TOKEN = "CAPTURE_AND_PLAN"
+RUN_CONFIRM_TOKEN = "RUN_Q1"
 
 
-def parse_args(argv=None):
-    parser = argparse.ArgumentParser(
-        description="Q1 HOME -> per-piece vision -> real-arm closed loop"
-    )
-    parser.add_argument("--camera-index", type=int, default=0)
+def _add_camera_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--camera-backend",
-        choices=("opencv", "k230_ttl"),
-        default="opencv",
+        choices=("k230_ttl", "opencv"),
+        default="k230_ttl",
     )
+    parser.add_argument("--camera-index", type=int, default=0)
+    parser.add_argument("--camera-port")
     parser.add_argument(
         "--robot-config",
         type=Path,
         default=Path("q1/config/robot_config.json"),
-        help="single source for NexArm port, calibration, HOME, motion and safety",
+        help="camera endpoint, paper-to-arm calibration and motion planning data",
     )
-    parser.add_argument(
-        "--magnet-backend",
-        choices=("stm32",),
-        default="stm32",
-        help="production Q1 is real STM32 magnet only",
-    )
-    parser.add_argument("--magnet-port")
     parser.add_argument("--capture-burst", type=int, default=8)
     parser.add_argument("--settle-time-ms", type=int, default=200)
     parser.add_argument("--observe-stabilize-ms", type=int, default=300)
-    parser.add_argument("--max-cycles", type=int, default=4)
-    parser.add_argument(
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Q1 single capture/solve followed by optional real execution"
+    )
+    commands = parser.add_subparsers(dest="command", required=True)
+
+    plan = commands.add_parser(
+        "plan",
+        help="capture once and generate capture.png, plan.png and planning JSON",
+    )
+    _add_camera_arguments(plan)
+    plan.add_argument(
+        "--output-dir",
+        type=Path,
+        help="new output directory; default is output/plans/q1/<timestamp>",
+    )
+    plan.add_argument(
         "--confirm",
         default="",
-        help=f"exactly {CONFIRM_TOKEN} authorizes the complete real-arm Q1 loop",
+        help=f"exactly {PLAN_CONFIRM_TOKEN} authorizes opening the camera",
     )
-    return parser.parse_args(argv)
+
+    run = commands.add_parser(
+        "run",
+        help="HOME, capture/plan once, then execute the complete piece queue",
+    )
+    _add_camera_arguments(run)
+    run.add_argument(
+        "--magnet-backend",
+        choices=("stm32",),
+        default="stm32",
+    )
+    run.add_argument("--magnet-port")
+    run.add_argument(
+        "--confirm",
+        default="",
+        help=f"exactly {RUN_CONFIRM_TOKEN} authorizes the complete real Q1 run",
+    )
+    return parser
+
+
+def parse_args(argv=None):
+    values = list(sys.argv[1:] if argv is None else argv)
+    if not values or values[0] not in {"plan", "run"}:
+        values.insert(0, "run")
+    return _build_parser().parse_args(values)
 
 
 def _apply_robot_fields(config: Q1RuntimeConfig, data: dict) -> None:
@@ -63,7 +97,6 @@ def _apply_robot_fields(config: Q1RuntimeConfig, data: dict) -> None:
         "pick_height",
         "release_height",
         "move_duration_ms",
-        "global_acceleration",
         "magnet_settle_ms",
         "magnet_release_settle_ms",
         "magnet_lease_ms",
@@ -71,18 +104,14 @@ def _apply_robot_fields(config: Q1RuntimeConfig, data: dict) -> None:
         "orientation_tolerance_deg",
         "motion_timeout_s",
         "vertex_max_error_mm",
-        "paper_corner_drift_limit_px",
     )
     for key in keys:
         if key in data and data[key] is not None:
             setattr(config, key, data[key])
     if "stable_samples" in data:
         config.idle_stable_samples = int(data["stable_samples"])
-    if "workspace_limits" in data:
-        config.workspace_limits = {
-            axis: (float(bounds[0]), float(bounds[1]))
-            for axis, bounds in data["workspace_limits"].items()
-        }
+    if data.get("camera_port"):
+        config.camera_port = str(data["camera_port"])
     if data.get("nexarm_port"):
         config.nexarm_port = str(data["nexarm_port"])
     if data.get("magnet_port") and not config.magnet_port:
@@ -98,58 +127,122 @@ def _apply_robot_fields(config: Q1RuntimeConfig, data: dict) -> None:
         config.observe_pose = tuple(values)
 
 
-def build_controller(args) -> Q1Controller:
-    if args.confirm != CONFIRM_TOKEN:
-        raise RuntimeError(
-            f"CONFIRMATION_REQUIRED: use --confirm {CONFIRM_TOKEN}; no hardware opened"
-        )
+def _load_runtime(args, *, mode: str, authorization: str) -> tuple[dict, Q1RuntimeConfig]:
     robot_data = (
         json.loads(args.robot_config.read_text(encoding="utf-8"))
         if args.robot_config.exists()
         else {}
     )
     config = Q1RuntimeConfig(
+        mode=mode,
+        authorization=authorization,
         camera_index=args.camera_index,
+        camera_port=args.camera_port,
         capture_burst=args.capture_burst,
         settle_time_ms=args.settle_time_ms,
-        max_cycles=args.max_cycles,
         robot_config=args.robot_config,
-        magnet_backend=args.magnet_backend,
-        magnet_port=args.magnet_port,
+        magnet_backend=getattr(args, "magnet_backend", "stm32"),
+        magnet_port=getattr(args, "magnet_port", None),
     )
     _apply_robot_fields(config, robot_data)
-    if robot_data and robot_data.get("magnet_backend") != "stm32":
-        raise RuntimeError("ROBOT_CONFIG_REQUIRES_STM32_MAGNET")
-    if (
-        robot_data
-        and config.magnet_backend == "stm32"
-        and config.magnet_port == robot_data.get("camera_port")
-    ):
-        raise RuntimeError("MAGNET_PORT_CONFLICTS_WITH_CAMERA")
-    blockers = config.real_run_blockers()
-    if blockers:
-        raise RuntimeError("RealRun禁止启动 / blocked: " + "; ".join(blockers))
+    if args.camera_port:
+        config.camera_port = args.camera_port
+    return robot_data, config
 
-    mapper = ArmCoordinateMapper(config.robot_config)
-    analyzer = SceneAnalyzer(
+
+def _build_analyzer(config: Q1RuntimeConfig) -> SceneAnalyzer:
+    return SceneAnalyzer(
         target_origin_mm=config.target_origin_mm,
         center_tolerance_mm=config.place_center_tolerance_mm,
         angle_tolerance_deg=config.place_angle_tolerance_deg,
         vertex_tolerance_mm=config.vertex_max_error_mm,
-        paper_corner_drift_limit_px=config.paper_corner_drift_limit_px,
     )
+
+
+def _build_camera(args, config: Q1RuntimeConfig):
     if args.camera_backend == "k230_ttl":
         from .k230_ttl_camera_adapter import K230TtlQ1Camera
 
-        camera = K230TtlQ1Camera(
-            stabilization_s=max(0, args.observe_stabilize_ms) / 1000.0,
+        options = {
+            "stabilization_s": max(0, args.observe_stabilize_ms) / 1000.0,
+        }
+        if config.camera_port:
+            options["port"] = config.camera_port
+        return K230TtlQ1Camera(**options)
+    return SnapshotCamera(
+        config.camera_index,
+        burst=config.capture_burst,
+        settle_ms=config.settle_time_ms,
+    )
+
+
+def _new_plan_directory(requested: Path | None) -> Path:
+    output_dir = (
+        requested
+        if requested is not None
+        else Path("output/plans/q1") / datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    ).resolve()
+    output_dir.mkdir(parents=True, exist_ok=False)
+    return output_dir
+
+
+def run_plan(args) -> Path:
+    if args.confirm != PLAN_CONFIRM_TOKEN:
+        raise RuntimeError(
+            f"CONFIRMATION_REQUIRED: use --confirm {PLAN_CONFIRM_TOKEN}; "
+            "camera not opened"
         )
-    else:
-        camera = SnapshotCamera(
-            config.camera_index,
-            burst=config.capture_burst,
-            settle_ms=config.settle_time_ms,
+    _, config = _load_runtime(
+        args,
+        mode="plan",
+        authorization=PLAN_CONFIRM_TOKEN,
+    )
+    blockers = config.planning_blockers()
+    if blockers:
+        raise RuntimeError("PLAN_BLOCKED: " + "; ".join(blockers))
+
+    mapper = ArmCoordinateMapper(config.robot_config)
+    camera = _build_camera(args, config)
+    output_dir = _new_plan_directory(args.output_dir)
+    try:
+        camera.open()
+        _, moves = capture_and_plan(
+            camera=camera,
+            analyzer=_build_analyzer(config),
+            mapper=mapper,
+            config=config,
+            output_dir=output_dir,
         )
+    finally:
+        camera.close()
+    print(f"Q1_PLAN_READY: moves={len(moves)}, output={output_dir}")
+    return output_dir
+
+
+def build_controller(args) -> Q1Controller:
+    if args.confirm != RUN_CONFIRM_TOKEN:
+        raise RuntimeError(
+            f"CONFIRMATION_REQUIRED: use --confirm {RUN_CONFIRM_TOKEN}; "
+            "no hardware opened"
+        )
+    robot_data, config = _load_runtime(
+        args,
+        mode="run",
+        authorization=RUN_CONFIRM_TOKEN,
+    )
+    if robot_data and robot_data.get("magnet_backend") != "stm32":
+        raise RuntimeError("ROBOT_CONFIG_REQUIRES_STM32_MAGNET")
+    if config.magnet_port and config.magnet_port == config.camera_port:
+        raise RuntimeError("MAGNET_PORT_CONFLICTS_WITH_CAMERA")
+    blockers = config.production_run_blockers()
+    if blockers:
+        raise RuntimeError("REAL_RUN_BLOCKED: " + "; ".join(blockers))
+
+    from .executors.nexarm import NexArmRobotExecutor
+    from .magnet import STM32MagnetController
+
+    mapper = ArmCoordinateMapper(config.robot_config)
+    camera = _build_camera(args, config)
     robot = NexArmRobotExecutor(Path(__file__).resolve().parents[1], config)
     magnet = STM32MagnetController(
         config.magnet_port or "",
@@ -157,7 +250,7 @@ def build_controller(args) -> Q1Controller:
     )
     return Q1Controller(
         camera=camera,
-        analyzer=analyzer,
+        analyzer=_build_analyzer(config),
         robot=robot,
         magnet=magnet,
         mapper=mapper,
@@ -165,14 +258,23 @@ def build_controller(args) -> Q1Controller:
     )
 
 
-def main(argv=None) -> int:
-    controller = build_controller(parse_args(argv))
-    final_scene = controller.run()
+def run_full(args) -> Path:
+    controller = build_controller(args)
+    controller.run()
     print(
-        f"Q1 FINISHED: cycle={final_scene.cycle_index}, "
+        f"Q1 FINISHED: moves={len(controller.move_queue)}, "
         f"run={controller.recorder.directory}"
     )
     controller.recorder.announce(prefix="Q1_FINISHED_RUN")
+    return controller.recorder.directory
+
+
+def main(argv=None) -> int:
+    args = parse_args(argv)
+    if args.command == "plan":
+        run_plan(args)
+    else:
+        run_full(args)
     return 0
 
 

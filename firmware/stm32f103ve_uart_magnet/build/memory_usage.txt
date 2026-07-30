@@ -1,0 +1,9 @@
+﻿
+========================================================================
+
+** Object/Image Component Sizes
+
+      Code (inc. data)   RO Data    RW Data    ZI Data      Debug   Object Name
+
+      3186         26        454          8       1176      12675   D:\diansai\2026\firmware\stm32f103_uart_magnet\build\firmware.axf
+      3186         26        454          8          0          0   ROM Totals for D:\diansai\2026\firmware\stm32f103_uart_magnet\build\firmware.axf

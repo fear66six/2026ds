@@ -242,4 +242,37 @@
 - 可信等级：A（实机反馈和只读协议回包）
 - 适用范围：当前 NexArm、固件 ESP32 1.0.0 / AT32 1.0.2、当前挂载负载
 - 最后核查时间：2026-07-30
-- 备注：D-029 将项目 HOME 定义为 `(168,0,230,-88,1,1)`；该定义是用户决策，不等同于执行链路故障修复。相对此稳定停点约 ΔY=5 mm、ΔZ=15 mm，若反馈不变则会超过现有 10 mm 到位容差。
+- 备注：D-029 当时将项目 HOME 定义为 `(168,0,230,-88,1,1)`；该定义是用户决策，不等同于执行链路故障修复。相对此稳定停点约 ΔY=5 mm、ΔZ=15 mm，若反馈不变则会超过现有 10 mm 到位容差。当前 HOME 后续已由 D-034 改为 `(180,0,200,-90,0,0)`。
+
+## F-025 HOME 前出现下探的最新现场现象
+
+- 结论：用户于 2026-07-30 报告当前复位流程从开机位置先向下移动至地面，再回到 HOME。修改前的两个真实入口都在 HOME `set_pose` 前发送 `CMD_SET_GLOBAL_ACC`，但主机源码中不存在向下中间位姿。
+- 来源：用户现场观察（D）；`2026E/q1/scripts/test_camera_arm_reset.py`、`q1/executors/nexarm.py::initialize`、厂商出厂程序 `system_task_handle.cpp::CMD_SET_GLOBAL_ACC`（A）。
+- 固件事实：出厂处理函数对 `CMD_SET_GLOBAL_ACC` 保存参数，广播舵机加速度寄存器并向下级发送 `CMD_SET_MOVE_ACC`；对 `CMD_COORDINATE_SET` 则直接转发完整目标。源码不能证明实机下探由哪一条命令触发。
+- 工程处理：D-035 删除 Q1 的全局加速度写入，使 HOME 成为握手读取后的第一条控制器写命令。
+- 待实机验证：重新接线并上传后运行一次 HOME；若仍下探，需把现象归入单条 HOME 的控制板/舵机内部轨迹，而不是 Python 中间位姿。
+
+## F-026 HOME (180,0,200,-90,0,0) 零运动复测
+
+- 结论：运行 `20260730_231532_316942` 从反馈位姿 `(500,0,73,0,0,0)` 发送 HOME `(180,0,200,-90,0,0)` 后，坐标和六路舵机反馈在整个等待期内均无变化，判定 `STALE_FEEDBACK_HARDWARE_FAULT`；后续 `plan` 命令因 `&&` 未执行。
+- 来源：用户下载的运行目录 `D:\OIK\Downloads\20260730_231532_316942\report.md`（实机运行报告）。
+- 来源位置：预检 `nexarm_communication`、位姿记录 `home_timeout`、`feedback_samples`。
+- 可信等级：A（当前实机协议回包）；是否需要实机验证：是，新 HOME 仍未验证。
+- 工程边界：D-036 将后续观察位改为 `(175,0,210,-90,0,0)` 以改善纸张取景，但位姿值变化本身不能修复该零运动执行故障。
+
+## F-027 HOME 超时图可完成当前 Q1 识别与四片规划
+
+- 结论：运行 `20260730_232815_277491` 的复位脚本在 HOME 后因陈旧反馈非零退出；Shell 使用 `&&`，因此后续 `q1.main plan` 没有启动，这就是该次“没有识别”的直接原因。该运行的 `home_timeout.jpg` 经当前 `SceneAnalyzer`、`plan_piece_moves` 离线复算后得到 `paper_valid=true`、`scene_valid=true`、4 块碎片和 `P1,P2,P3,P4` 四条规划，并生成 `capture.png`、`plan.png`、`scene.json`、`piece_moves.json`。
+- 来源：`D:\OIK\Downloads\20260730_232815_277491\report.json`、`captures/home_timeout.jpg`；`2026E/q1/workflow.py::capture_and_plan`、`SceneAnalyzer`、`plan_piece_moves`。
+- 可信等级：A（实机原始图、运行报告和当前源码离线执行）；是否需要实机验证：视觉识别结论不需要，修改后的完整 `run` 仍需要实机执行。
+- 适用范围：当前 A4 摆放、四块实物、K230 取景和本次源码版本。
+- 最后核查时间：2026-07-30。
+
+## F-028 STM32F103VET6 电磁铁固件已移植并通过串口与 100ms 吸合测试
+
+- 结论：新工程位于 `firmware/stm32f103ve_uart_magnet`，目标 MCU 为 STM32F103VE（高密度，`STM32F10X_HD`），启动文件 `startup_stm32f10x_hd.s`，Flash `0x08000000+512KiB`，SRAM `0x20000000+64KiB`。应用协议仍为 USART1 115200 8N1 的 `PING`/`GET_STATUS`/`MAGNET_ON`/`MAGNET_OFF`/`EMERGENCY_OFF`。Windows 侧 CubeProgrammer 识别芯片 ID `0x414`（STM32F101/F103 High-density，512KB），阶段 A `stm32f103ve_uart_ping.hex` 烧录 Verify 成功且 PING 20/20；阶段 B `stm32f103ve_uart_magnet.hex`（控制脚 PC0）烧录 Verify 成功。Jetson 路径 `/dev/serial/by-id/usb-1a86_USB_Single_Serial_5B7A030191-if00` 上 `PING=True`、`STATUS MAGNET=0 FAULT=0`，`MAGNET_ON 100` 应答成功，250ms 后状态为关，并完成 `MAGNET_OFF`/`EMERGENCY_OFF`。
+- 来源：`firmware/stm32f103ve_uart_magnet/inc/board_config.h`、`src/main.c`、`src/magnet_control.c`、`build/BUILD_REPORT.md`、`build/stm32f103ve_uart_magnet.hex`（A）；CubeProgrammer 探测/烧录输出与 Windows/Jetson 串口测试输出（A）；用户确认 PC0 引出与占用情况（D）。
+- 可信等级：A（源码、烧录与串口测试）+ D（板卡 PC0 映射确认）
+- 适用范围：当前 VET6 板、ATK 序列号 `5B7A030191`、PC0→MOSFET 控制端接线；不覆盖旧 C8T6/`PB12` 工程
+- 最后核查时间：2026-07-31
+- 备注：旧工程 `firmware/stm32f103_uart_magnet` 保持未覆盖。`STATUS MAGNET=0` 仍只证明固件锁存关闭，不能单独证明线圈无电流；吸合磁力与工件吸取仍待视觉/现场验证。

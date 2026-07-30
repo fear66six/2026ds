@@ -9,12 +9,11 @@ import numpy as np
 import pytest
 
 from q1.analyzer import SceneAnalyzer
-from q1.auditor import audit_scene
 from q1.calibration import ArmCoordinateMapper
 from q1.edge_refinement import refine_polygon_from_contour
 from q1.geometry import apply_rigid_pose, apply_rigid_transform, compute_rigid_transform, normalize_angle_deg
-from q1.models import PieceGeometry, PieceTaskStatus, PaperPose, SceneAnalysis, SingleMovePlan, TemplateState
-from q1.motion import plan_single_move
+from q1.models import PieceGeometry, PieceTaskStatus
+from q1.motion import plan_piece_moves
 from q1.pieces import (
     PIECE_TEMPLATES,
     template_target_vertices_mm,
@@ -23,7 +22,6 @@ from q1.pieces import (
 )
 from q1.puzzle_solver import assign_templates_global
 from q1.runtime_config import Q1RuntimeConfig
-from q1.selector import select_next_piece
 from q1.wrist import choose_wrist_release_roll
 
 
@@ -132,13 +130,11 @@ def test_rigid_transform_r_t_and_no_mirror():
         assert bad.max_error_mm > 5.0 or bad.determinant > 0
 
 
-def test_pick_release_roll_and_no_silent_clamp(tmp_path):
+def test_pick_release_roll_has_no_software_range_limit(tmp_path):
     cal = {
         "paper_to_robot_matrix": [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
         "wrist_roll_zero_deg": 0.0,
         "wrist_roll_sign": 1.0,
-        "wrist_roll_min_deg": -40.0,
-        "wrist_roll_max_deg": 40.0,
     }
     path = tmp_path / "arm.json"
     path.write_text(json.dumps(cal), encoding="utf-8")
@@ -146,11 +142,9 @@ def test_pick_release_roll_and_no_silent_clamp(tmp_path):
     ok = mapper.map_in_plane_rotation(30.0)
     assert ok.valid and ok.release_roll_deg == 30.0
     assert ok.pick_roll_deg != ok.release_roll_deg or abs(30.0) < 1e-9
-    bad = mapper.map_in_plane_rotation(80.0)
-    assert not bad.valid
-    assert bad.rejection_reason == "WRIST_ROTATION_OUT_OF_RANGE"
-    # 确认没有 clamp 成 40
-    assert bad.release_roll_deg is None
+    unbounded = mapper.map_in_plane_rotation(80.0)
+    assert unbounded.valid
+    assert unbounded.release_roll_deg == 80.0
 
 
 def test_wrist_helper_candidates():
@@ -158,10 +152,8 @@ def test_wrist_helper_candidates():
         pick_roll_deg=0.0,
         rotation_delta_deg=350.0,
         wrist_roll_sign=1.0,
-        roll_min_deg=-20.0,
-        roll_max_deg=20.0,
     )
-    # 350 -> -10 via -360 branch
+    # 350 degrees uses the equivalent shortest rotation.
     assert result.valid
     assert abs(result.release_roll_deg - (-10.0)) < 1e-6
 
@@ -204,108 +196,6 @@ def test_puzzle_union_overlap_gap_outside():
     assert report["TARGET_WIDTH_MM"] == 100.0
 
 
-def test_audit_fault_classes():
-    origin = (55.0, 168.5)
-    expected = {f"P{i+1}": template_target_vertices_mm(i, origin) for i in range(4)}
-
-    def make_scene(pieces_map, statuses):
-        templates = {}
-        pieces = []
-        for i, tid in enumerate(("P1", "P2", "P3", "P4")):
-            piece = None
-            if tid in pieces_map:
-                piece = _piece(pieces_map[tid], detected_id=i, region="UPPER_SOURCE" if statuses[tid] == PieceTaskStatus.UNPLACED else "LOWER_TARGET", template_id=tid)
-                pieces.append(piece)
-            templates[tid] = TemplateState(
-                tid,
-                statuses[tid],
-                piece,
-                expected[tid],
-                0.0,
-                0.0,
-                0.0,
-                1,
-            )
-        return SceneAnalysis(
-            1,
-            "",
-            pieces,
-            templates,
-            {k for k, v in statuses.items() if v == PieceTaskStatus.PLACED_OK},
-            {k for k, v in statuses.items() if v == PieceTaskStatus.UNPLACED},
-            {},
-            True,
-            True,
-        )
-
-    source = expected["P1"] + np.array([0.0, -80.0])
-    prev_scene = make_scene({"P1": source, "P2": expected["P2"] + [0, -60], "P3": expected["P3"] + [0, -50], "P4": expected["P4"] + [0, -40]}, {k: PieceTaskStatus.UNPLACED for k in expected})
-    plan = SingleMovePlan(
-        0,
-        "P1",
-        PaperPose(float(source.mean(0)[0]), float(source.mean(0)[1]), 0),
-        PaperPose(float(expected["P1"].mean(0)[0]), float(expected["P1"].mean(0)[1]), 0),
-        None,
-        None,
-        (float(source.mean(0)[0]), float(source.mean(0)[1])),
-        None,
-        None,
-        None,
-        None,
-        10.0,
-        0.9,
-        "t",
-        0,
-        pick_point_source_mm=source.mean(0),
-        release_point_target_mm=expected["P1"].mean(0),
-    )
-
-    # PICK_FAILED: still near source
-    scene_pick = make_scene({"P1": source + np.array([1.0, 0.0]), "P2": expected["P2"]+[0,-60], "P3": expected["P3"]+[0,-50], "P4": expected["P4"]+[0,-40]}, {k: PieceTaskStatus.UNPLACED for k in expected})
-    audit = audit_scene(scene_pick, plan, prev_scene, target_origin_mm=origin)
-    assert audit.pick_failed_template == "P1"
-
-    # PLACED_OFFSET
-    scene_off = make_scene({"P1": expected["P1"] + np.array([12.0, 0.0]), "P2": expected["P2"], "P3": expected["P3"], "P4": expected["P4"]}, {"P1": PieceTaskStatus.PLACED_OFFSET, "P2": PieceTaskStatus.PLACED_OK, "P3": PieceTaskStatus.PLACED_OK, "P4": PieceTaskStatus.PLACED_OK})
-    audit2 = audit_scene(scene_off, plan, prev_scene, target_origin_mm=origin)
-    assert "P1" in audit2.placed_offset
-
-    # DROPPED
-    mid = (source.mean(0) + expected["P1"].mean(0)) / 2
-    mid_poly = source - source.mean(0) + mid
-    scene_drop = make_scene({"P1": mid_poly, "P2": expected["P2"]+[0,-60], "P3": expected["P3"]+[0,-50], "P4": expected["P4"]+[0,-40]}, {k: PieceTaskStatus.UNPLACED for k in expected})
-    audit3 = audit_scene(scene_drop, plan, prev_scene, target_origin_mm=origin)
-    assert audit3.dropped_template == "P1"
-
-    # MISSING -> recovery uses previous plan flag via selector
-    scene_miss = make_scene({"P2": expected["P2"]+[0,-60], "P3": expected["P3"]+[0,-50], "P4": expected["P4"]+[0,-40]}, {"P1": PieceTaskStatus.MISSING, "P2": PieceTaskStatus.UNPLACED, "P3": PieceTaskStatus.UNPLACED, "P4": PieceTaskStatus.UNPLACED})
-    audit4 = audit_scene(scene_miss, plan, prev_scene, target_origin_mm=origin)
-    assert audit4.recovery_template == "P1"
-    tid, details = select_next_piece(scene_miss, audit4)
-    assert tid == "P1" and details.get("use_previous_plan") is True
-
-
-def test_selector_scores_not_placeholders():
-    from q1.camera import StaticImageCamera
-    from q1.executors.simulation import SimulationWorld
-
-    world = SimulationWorld()
-    snapshot = StaticImageCamera(world.snapshot).capture_snapshot(0)
-    scene = SceneAnalyzer().analyze(snapshot, 0)
-    audit = audit_scene(scene, None, None)
-    tid, details = select_next_piece(scene, audit)
-    assert tid in scene.templates
-    scores = details["scores"]
-    for feats in scores.values():
-        assert "verification_visibility" in feats
-        assert "path_collision_risk" in feats
-        assert "blocking_future_targets" in feats
-        # 不允许三者同时是固定占位常数组合出现在源码逻辑中；数值可偶然相同，但字段必须由几何计算写入
-        assert isinstance(feats["verification_visibility"], float)
-        assert isinstance(feats["path_collision_risk"], float)
-        assert isinstance(feats["blocking_future_targets"], float)
-
-
 def test_release_point_matches_r_t(tmp_path):
     from q1.camera import StaticImageCamera
     from q1.executors.simulation import SimulationWorld
@@ -314,9 +204,11 @@ def test_release_point_matches_r_t(tmp_path):
     snapshot = StaticImageCamera(world.snapshot).capture_snapshot(0)
     scene = SceneAnalyzer().analyze(snapshot, 0)
     assert scene.scene_valid
-    audit = audit_scene(scene, None, None)
-    tid, details = select_next_piece(scene, audit)
-    plan = plan_single_move(scene, tid, ArmCoordinateMapper(None), Q1RuntimeConfig(run_root=tmp_path), reason_selected=details["reason"])
+    plan = plan_piece_moves(
+        scene,
+        ArmCoordinateMapper(None),
+        Q1RuntimeConfig(run_root=tmp_path),
+    )[0]
     assert plan.rigid_transform is not None
     assert plan.pick_point_source_mm is not None
     assert plan.release_point_target_mm is not None

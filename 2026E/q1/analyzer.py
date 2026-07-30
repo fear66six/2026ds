@@ -151,22 +151,15 @@ class SceneAnalyzer:
         center_tolerance_mm: float = 5.0,
         angle_tolerance_deg: float = 5.0,
         vertex_tolerance_mm: float = 8.0,
-        paper_corner_drift_limit_px: float = 25.0,
     ) -> None:
         self.target_origin_mm = target_origin_mm
         self.center_tolerance_mm = center_tolerance_mm
         self.angle_tolerance_deg = angle_tolerance_deg
         self.vertex_tolerance_mm = vertex_tolerance_mm
-        self.paper_corner_drift_limit_px = float(paper_corner_drift_limit_px)
         self.full_analysis_count = 0
         self.last_assignment = None
         self.last_paper = None
-        self.last_detected_paper: PaperFrame | None = None
         self.last_divider_y_cm = None
-        self.locked_paper: PaperFrame | None = None
-        self.locked_divider_y_cm: float | None = None
-        self.last_paper_corner_drift_px: float | None = None
-        self.last_paper_rejection_reason: str | None = None
 
     def analyze(self, snapshot: Snapshot, cycle_index: int) -> SceneAnalysis:
         self.full_analysis_count += 1
@@ -205,26 +198,6 @@ class SceneAnalyzer:
                 assignment_total_cost = assignment.total_cost
                 if not assignment.accepted:
                     warnings.append(assignment.rejection_reason or "ASSIGNMENT_REJECTED")
-                elif self.locked_paper is None and self.last_paper is not None:
-                    self.locked_paper = PaperFrame(
-                        corners_px=np.asarray(
-                            self.last_paper.corners_px, dtype=np.float32
-                        ).copy(),
-                        px_per_cm=float(self.last_paper.px_per_cm),
-                        divider_y_cm=float(self.last_paper.divider_y_cm),
-                        landscape_in_image=bool(self.last_paper.landscape_in_image),
-                    )
-                    self.locked_divider_y_cm = float(
-                        self.last_divider_y_cm or config.DIVIDER_Y_CM
-                    )
-                    warnings.append("PAPER_FRAME_LOCKED_FOR_RUN")
-            if self.last_paper_rejection_reason:
-                warnings.append(self.last_paper_rejection_reason)
-            elif self.last_paper_corner_drift_px is not None:
-                warnings.append(
-                    "PAPER_FRAME_DRIFT_PX="
-                    f"{self.last_paper_corner_drift_px:.2f}"
-                )
         templates = self._classify_templates(pieces, cycle_index)
         placed = {key for key, value in templates.items() if value.status == PieceTaskStatus.PLACED_OK}
         remaining = set(TEMPLATE_IDS) - placed
@@ -300,40 +273,13 @@ class SceneAnalyzer:
     ) -> tuple[list[PieceGeometry], bool, dict[str, float], object]:
         timings: dict[str, float] = {}
         t = time.perf_counter()
-        detected_paper = detect_paper(frame)
-        self.last_detected_paper = detected_paper
+        paper = detect_paper(frame)
         timings["rectify_ms"] = (time.perf_counter() - t) * 1000.0
-        self.last_paper_corner_drift_px = None
-        self.last_paper_rejection_reason = None
-        if detected_paper is None:
+        if paper is None:
             self.last_paper = None
             self.last_divider_y_cm = None
             return [], False, timings, None
-        if self.locked_paper is not None:
-            drift = float(
-                np.linalg.norm(
-                    np.asarray(detected_paper.corners_px, dtype=np.float64)
-                    - np.asarray(self.locked_paper.corners_px, dtype=np.float64),
-                    axis=1,
-                ).max()
-            )
-            self.last_paper_corner_drift_px = drift
-            if drift > self.paper_corner_drift_limit_px:
-                self.last_paper = detected_paper
-                self.last_divider_y_cm = None
-                self.last_paper_rejection_reason = (
-                    "PAPER_FRAME_DRIFT_EXCEEDED: "
-                    f"drift_px={drift:.2f}, "
-                    f"limit_px={self.paper_corner_drift_limit_px:.2f}"
-                )
-                return [], False, timings, None
-            paper = self.locked_paper
-            divider = float(
-                self.locked_divider_y_cm or config.DIVIDER_Y_CM
-            )
-        else:
-            paper = detected_paper
-            divider = detect_divider_line(frame, paper) or config.DIVIDER_Y_CM
+        divider = detect_divider_line(frame, paper) or config.DIVIDER_Y_CM
         self.last_paper = paper
         self.last_divider_y_cm = float(divider)
         t = time.perf_counter()

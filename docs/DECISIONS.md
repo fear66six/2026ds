@@ -39,7 +39,7 @@
 - 替代方案：USB CDC；PC13 控制；继电器或 PWM；这些方案本轮不采用。
 - 依据：用户当前工程决策；`docs/进口芯STM32F103C8T6焊针下/STM32F103C8T6核心板硬件资料/STM32F103C8T6-MICRO-原理图.pdf` 第 1 页；`logs/stm32_uart_bootloader/connection_115200.log`。
 - 影响范围：`firmware/stm32f103_uart_magnet/`、`drivers/stm32_magnet_uart.py`、后续 Jetson 串口集成与电气验证。
-- 当前状态：固件和离线驱动已实现并编译；尚未烧录或执行 PB12 实机输出测试。
+- 当前状态：该决策描述的是历史 C8T6/`PB12` 架构。现行板卡、工程路径与控制脚已由 D-038 / F-028 更新为 STM32F103VET6 + PC0。
 - 需要重新评估的条件：实际 MOSFET 模块空载测试证明输入极性或 3.3 V 兼容性与该决定不符，或硬件架构改变。
 
 ## D-005 Q1 生产入口仅暴露真实摄像头 + NexArm + STM32 电磁铁闭环
@@ -271,3 +271,77 @@
 - 依据：Jetson 运行 `20260729_164647_578613`、`20260729_170513_284352`；只读真实关节/TCP 报告 `output/diagnostics/nexarm_readonly/20260729_170214.json`（A）；用户 2026-07-30 明确决策（D）。
 - 适用边界：这是项目回退，不证明旧 HOME 不可达，也不证明 AT32 到舵机的执行故障已经修复。`direct_pick_release_pose_verified` 与 `physical_pick_verified` 继续保持 `false`，不得据此解除抓放或电磁铁门禁。
 - 当前状态：已写入本地统一配置和运行时默认值并同步 Jetson；JSON、语法、SHA256 与本地 18 项离线测试通过，尚未重新执行实机 HOME。
+
+## D-030 Q1 改为单次观察、一次规划、顺序执行
+
+- 决策：D-017/D-018/D-019/D-023/D-027 中“每片回 HOME、重新拍照、视觉审计、再规划下一片”的生产编排由本决策覆盖。正式主流程改为初始化相机/NexArm/STM32 → HOME/观察位 → 单次拍照识别和拼图求解 → 一次生成按 P1 到 P4 排序的 `PieceMove` 队列 → 顺序执行吸取、吸合、搬运和释放。
+- 决策：生产运行只保存一张 `capture.png`；场景、完整队列、逐片执行和汇总分别写入结构化 JSON。删除每轮 `raw.png`、`scene.png`、`rectified.png`、`overlay.png`、debug 图片、重复审计/选择/重规划状态和 `--max-cycles`。
+- 决策：这是上层编排收缩，不改变 `NexArmRobotExecutor` 的新鲜反馈、到位超时和后续位姿阻断，也不改变 `STM32MagnetController` 的状态确认、500 ms 租约和异常断电。`completed=true` 只表示队列执行完毕，不代表动作后视觉复核；运行中不再自动写 `physical_pick_verified=true`。
+- 决策：完整生产入口使用 `production_run_blockers()`；该决策作出时 `direct_pick_release_pose_verified=false`，因此在任何相机或串口打开前拒绝启动。底层只读/HOME 诊断继续使用不含该生产门禁的设备初始化检查；当前值已由 D-033 更新。
+- 原因：用户提供的 3.2.1 程序设计和流程图明确要求先完成一次视觉求解并生成 `PieceMove` 列表，再循环执行列表；现有逐片视觉闭环和多套图片后处理与该设计不一致，且增加现场理解和日志定位成本。
+- 依据：用户 2026-07-30 提供的主程序设计与流程图（D）；`2026E/2026E副本/q1/pipeline.py::run_pipeline`、`motion.py::plan_motions`（历史源码，A）；`2026E/q1/controller.py::Q1Controller`、`motion.py::plan_piece_moves`、`state_machine.py::Q1State`（当前源码，A）。
+- 当前状态：本地实现与 Mock/几何离线测试完成；未打开真实串口、未发送机械臂运动、未给电磁铁通电。V-013 与 D-028 的实机门禁继续有效。
+
+## D-031 Q1 拆分为独立视觉规划和完整执行入口
+
+- 决策：`q1.main` 提供 `plan` 与 `run` 两个阶段。`plan` 只允许打开 K230，单次拍照后生成 `capture.png`、`scene.json` 和 `piece_moves.json`；不构造 NexArm 或 STM32 控制器。`run` 才初始化三类设备、到 HOME 并执行完整队列。
+- 决策：两个入口必须复用 `q1.workflow::capture_and_plan`，不得分别维护识别或规划实现。K230 Jetson 驱动的正式加载位置为 `2026E/drivers/k230_ttl_camera/jetson`。
+- 决策：`plan` 使用独立令牌 `CAPTURE_AND_PLAN`。它不受 `direct_pick_release_pose_verified` 阻止，但仍要求纸面到机械臂映射、腕部方向和抓放高度字段齐全，确保输出的 `PieceMove` 是完整后续规划而不是只有像素坐标。
+- 原因：当前 HOME/舵机执行故障和抓放精度尚未解决，但用户现阶段需要先在固定观察位验证完整 A4 构图、四片精确识别和后续动作规划；让生产抓放门禁同时阻止视觉开发会混淆两个独立问题。
+- 依据：用户 2026-07-30 明确要求（D）；`q1/main.py`、`q1/workflow.py`、`q1/runtime_config.py::planning_blockers`、`q1/tests/test_q1_plan_entry.py`（A）；K230 `drivers/k230_ttl_camera/jetson/k230_camera.py` 与 `protocol.py`（A）。
+- 当前状态：本地 `57 passed`、`compileall` 和 CLI 帮助检查通过；未连接 Jetson、未打开真实相机串口、未运动机械臂、未通电电磁铁。Jetson 实景结果见 V-014。
+
+## D-032 删除 Q1 软件坐标范围并将抓放高度改为 Z15
+
+- 决策：从正式规划、NexArm 执行器和 HOME 复位脚本中删除 XYZ/Pitch/Roll/Claw 软件范围检查；删除 `workspace_limits`、`wrist_roll_min_deg` 和 `wrist_roll_max_deg` 配置字段及对应拒绝分支，不以空范围或扩大范围替代。
+- 决策：`pick_height` 与 `release_height` 同时由 25 改为 15。腕部仍使用零位和正负方向映射，角度不再受项目软件上下限拒绝。
+- 依据：用户 2026-07-30 明确要求（D）；`q1/motion.py`、`q1/executors/nexarm.py`、`q1/scripts/test_camera_arm_reset.py`、`q1/calibration.py`、`q1/wrist.py` 和 `q1/config/robot_config.json`（A）。
+- 适用边界：删除的是项目软件坐标范围，不改变板端固件限制、逆解结果或机械物理边界。本决策作出时 Z15 尚无实机验证且 `direct_pick_release_pose_verified=false`；该状态后来由 D-033 覆盖。
+- 当前状态：仅本地代码和配置已修改；未连接 Jetson、未发送运动、未通电电磁铁。
+
+## D-033 确认 Z15 完整吸取与释放位姿
+
+- 决策：将正式配置 `direct_pick_release_pose_verified` 由 `false` 改为 `true`，保留 `pick_height=15` 和 `release_height=15`。
+- 依据：用户于 2026-07-30 明确确认完整吸取与释放 XY/Z/Pitch/Roll 位姿均已到位（D）；`q1/config/robot_config.json` 与生产门禁测试（A）。
+- 覆盖关系：本决策覆盖 D-032 中“Z15 尚无实机验证”的当前状态，不修改 D-023、D-026、D-028 中 Z25 和陈旧反馈的历史证据。
+- 适用边界：位姿到位确认不等同于磁吸可靠性或最终拼放精度验证，`physical_pick_verified=false` 保持不变。
+- 当前状态：本地配置和文档已更新；本次未连接 Jetson、未发送运动、未通电电磁铁。
+
+## D-034 将统一 HOME 调整为 (180,0,200,-90,0,0)
+
+- 决策：将 Q1 唯一 HOME/观察位由 D-029 的 `(168,0,230,-88,1,1)` 改为 `(180,0,200,-90,0,0)`；动作时间继续使用独立的 `move_duration_ms=6000`。
+- 依据：用户于 2026-07-30 明确指定新 HOME（D）；`q1/config/robot_config.json`、`q1/main.py::_apply_robot_fields`（A）。
+- 覆盖关系：本决策只覆盖 D-029 的当前 HOME 值，不删除此前 HOME 故障和反馈记录。
+- 待实机验证：本次仅写入本地配置，未发送运动；配置值不能单独证明新 HOME 已到位。
+
+## D-035 HOME 前不再写入全局加速度
+
+- 决策：复位脚本和生产执行器在打开 NexArm 串口后只读取固件版本与当前位姿，第一条控制器写命令直接发送当前 HOME；删除 Q1 对 `CMD_SET_GLOBAL_ACC` 的调用、配置字段和命令行分支。
+- 依据：用户于 2026-07-30 报告当前流程出现“先向下触地、再到 HOME”的实机现象并要求从开机位置直接到 HOME（D）；`q1/scripts/test_camera_arm_reset.py`、`q1/robot/safe_nexarm.py`、`q1/executors/nexarm.py` 与厂商 `system_task_handle.cpp::CMD_SET_GLOBAL_ACC`（A）。
+- 覆盖关系：本决策覆盖 D-016 中生产初始化写入全局加速度 10 的当前要求；厂商 SDK 方法保留，但 Q1 不调用。
+- 适用边界：主机端不存在 HOME 前的中间位姿命令。若单条 `CMD_COORDINATE_SET(HOME)` 仍产生下探轨迹，则该路径由控制板/舵机内部执行，不是 Python 发送了第二个位姿。
+- 当前状态：仅完成本地实现和配置修改；Jetson 已断开，尚未上传或发送机械臂运动。
+
+## D-036 将统一 HOME 调整为 (175,0,210,-90,0,0)
+
+- 决策：将 Q1 唯一 HOME/观察位由 D-034 的 `(180,0,200,-90,0,0)` 改为 `(175,0,210,-90,0,0)`；动作时间继续使用独立的 `move_duration_ms=6000`。
+- 依据：用户于 2026-07-30 根据现场取景明确指定该观察位，以使相机包含完整纸张（D）；`q1/config/robot_config.json`（A）。
+- 覆盖关系：本决策只覆盖 D-034 的当前 HOME 值，不删除运行 `20260730_231532_316942` 的零运动故障证据。
+- 待实机验证：当前只更新本地配置；新 HOME 的可达性、到位反馈和完整 A4 构图仍须分别实测。
+
+## D-037 正式 Q1 按位姿动作时长推进并输出单张规划图
+
+- 决策：正式 `q1.main run` 发送 HOME、吸取位和释放位后分别等待配置的 `move_duration_ms`，不再用当前陈旧的 NexArm 坐标/舵机反馈阻塞流程；HOME 时长结束后只拍一张正式图，输出 `capture.png`、`plan.png`、`scene.json`、`piece_moves.json`，随后立即执行完整队列。
+- 依据：F-022、F-027 的物理运动与陈旧反馈证据；用户于 2026-07-30 明确要求单线完整流程并接受已验证位姿按动作时间执行（D）；`q1/controller.py::run`、`q1/executors/nexarm.py::_move_and_wait`、`q1/workflow.py::capture_and_plan`（A）。
+- 覆盖关系：覆盖 D-026 中“无新鲜反馈变化时硬停”的生产路径决策；不修改 HOME、Z15、纸面映射、规划残差门限或 STM32 固件。
+- 适用边界：`DURATION_ELAPSED` 只证明等待时间结束，不是控制器反馈到位证明；`physical_pick_verified=false` 继续表示磁吸和最终拼放结果尚未验证。
+- 当前状态：本地实现和实图离线规划已通过；尚未执行修改后的真实机械臂/电磁铁流程。
+
+## D-038 电磁铁控制板切换为 STM32F103VET6，控制脚改为 PC0
+
+- 决策：当前电磁铁控制 MCU 由 STM32F103C8T6 切换为 STM32F103VET6；新固件工程为 `firmware/stm32f103ve_uart_magnet`，不覆盖旧 C8T6 工程。上层串口协议保持不变。USART1 仍用 PA9/PA10；MOSFET 控制脚由用户指定并确认的 PC0 取代旧 PB12，集中定义于 `board_config.h`。
+- 原因：用户更换开发板；新板侧排针引出 PC0 供控制，不再假定 PB12。
+- 依据：用户明确决策与 PC0 确认（D）；Keil 编译产物、CubeProgrammer 烧录 Verify、Windows PING 20/20、Jetson `MAGNET_ON 100` 自动关闭测试（A，见 F-028）。
+- 覆盖关系：覆盖 D-004 中“当前板为 C8T6、控制脚 PB12”的现行状态；旧 C8T6/`PB12` 工程仅作历史保留。
+- 适用边界：`STATUS MAGNET` 仍只表示固件 GPIO 锁存；工件吸取/释放与线圈电气额定值继续独立验证。
+- 当前状态：阶段 A/B 已烧录并完成 Jetson 100ms 吸合与自动关闭测试。

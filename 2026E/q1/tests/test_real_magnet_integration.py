@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 from contextlib import contextmanager
 from pathlib import Path
@@ -62,11 +63,19 @@ def test_hold_exception_forces_emergency_off(monkeypatch):
     magnet.close()
 
 
-def test_stm32_backend_uses_configured_port_without_cli_override():
+def test_stm32_backend_uses_configured_port_without_cli_override(
+    tmp_path, monkeypatch
+):
+    source = Path(__file__).resolve().parents[1] / "config" / "robot_config.json"
+    robot = json.loads(source.read_text(encoding="utf-8"))
+    robot["direct_pick_release_pose_verified"] = True
+    robot_config = tmp_path / "robot_config.json"
+    robot_config.write_text(json.dumps(robot), encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
     args = parse_args(
         [
             "--robot-config",
-            "q1/config/robot_config.json",
+            str(robot_config),
             "--magnet-backend",
             "stm32",
             "--confirm",

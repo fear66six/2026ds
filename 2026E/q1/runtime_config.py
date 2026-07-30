@@ -13,18 +13,13 @@ class Q1RuntimeConfig:
     camera_index: int = 0
     capture_burst: int = 8
     settle_time_ms: int = 200
-    max_visual_retries: int = 2
-    max_release_retries: int = 2
-    max_cycles: int = 4
     place_center_tolerance_mm: float = 5.0
     place_angle_tolerance_deg: float = 5.0
     vertex_max_error_mm: float = 8.0
-    remaining_move_tolerance_mm: float = 3.0
-    remaining_rotate_tolerance_deg: float = 3.0
     target_origin_mm: tuple[float, float] = (55.0, 168.5)
-    paper_corner_drift_limit_px: float = 25.0
     robot_config: Path | None = None
     run_root: Path = Path("output/runs/q1")
+    camera_port: str | None = None
     nexarm_port: str | None = None
     magnet_backend: str = "stm32"
     magnet_port: str | None = None
@@ -44,10 +39,8 @@ class Q1RuntimeConfig:
     pick_height: float | None = None
     release_height: float | None = None
     move_duration_ms: int | None = None
-    global_acceleration: int | None = None
     magnet_settle_ms: int | None = None
     magnet_release_settle_ms: int | None = None
-    workspace_limits: dict[str, tuple[float, float]] | None = None
 
     position_tolerance_mm: float = 10.0
     orientation_tolerance_deg: float = 3.0
@@ -57,7 +50,7 @@ class Q1RuntimeConfig:
     physical_pick_verified: bool = False
     motion_calibration_status: str = (
         "UNVERIFIED: direct HOME-to-pick and pick-to-release six-axis targets at "
-        "Z=25, including every XY/Z/Pitch/Roll combination, have not been validated; "
+        "Z=15, including every XY/Z/Pitch/Roll combination, have not been validated; "
         "separate Z=250 and source-XY/Z=226 waypoints were rejected"
     )
 
@@ -112,23 +105,57 @@ class Q1RuntimeConfig:
             blockers.append(
                 f"INVALID_MOTION_MODE: expected direct_pose, got {self.motion_mode}"
             )
-
         required = {
             "pick_height": self.pick_height,
             "release_height": self.release_height,
             "move_duration_ms": self.move_duration_ms,
-            "global_acceleration": self.global_acceleration,
             "magnet_settle_ms": self.magnet_settle_ms,
             "magnet_release_settle_ms": self.magnet_release_settle_ms,
-            "workspace_limits": self.workspace_limits,
             "position_tolerance_mm": self.position_tolerance_mm,
             "orientation_tolerance_deg": self.orientation_tolerance_deg,
             "idle_stable_samples": self.idle_stable_samples,
             "motion_timeout_s": self.motion_timeout_s,
             "vertex_max_error_mm": self.vertex_max_error_mm,
-            "paper_corner_drift_limit_px": self.paper_corner_drift_limit_px,
         }
         for name, value in required.items():
-            if value is None or (name == "workspace_limits" and not value):
+            if value is None:
                 blockers.append(f"ROBOT_CONFIG_REQUIRED: missing {name}")
+        return blockers
+
+    def planning_blockers(self) -> list[str]:
+        blockers: list[str] = []
+        if self.robot_config is None or not self.robot_config.exists():
+            return ["ROBOT_CONFIG_REQUIRED"]
+
+        try:
+            from .calibration import ArmCoordinateMapper
+
+            mapper = ArmCoordinateMapper(self.robot_config)
+        except (OSError, ValueError) as exc:
+            return [f"ROBOT_CONFIG_INVALID: {exc}"]
+
+        if not mapper.is_calibrated():
+            blockers.append("CALIBRATION_REQUIRED: paper_to_robot_matrix")
+        if not mapper.wrist_mapping_ready():
+            blockers.append("CALIBRATION_REQUIRED: wrist roll mapping incomplete")
+        if self.motion_mode != "direct_pose":
+            blockers.append(
+                f"INVALID_MOTION_MODE: expected direct_pose, got {self.motion_mode}"
+            )
+        required = {
+            "pick_height": self.pick_height,
+            "release_height": self.release_height,
+            "move_duration_ms": self.move_duration_ms,
+            "vertex_max_error_mm": self.vertex_max_error_mm,
+        }
+        for name, value in required.items():
+            if value is None:
+                blockers.append(f"ROBOT_CONFIG_REQUIRED: missing {name}")
+        return blockers
+
+    def production_run_blockers(self) -> list[str]:
+        """Checks required before the full camera/arm/magnet Q1 entry opens hardware."""
+        blockers = self.real_run_blockers()
+        if not self.direct_pick_release_pose_verified:
+            blockers.append("DIRECT_PICK_RELEASE_POSE_UNVERIFIED")
         return blockers

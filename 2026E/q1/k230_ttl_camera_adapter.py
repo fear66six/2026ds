@@ -12,11 +12,15 @@ import numpy as np
 from .camera import frame_quality
 from .models import Snapshot
 
-_DRIVER = Path(__file__).resolve().parents[1] / "hardware" / "k230_ttl_camera"
+_DRIVER = (
+    Path(__file__).resolve().parents[1]
+    / "drivers"
+    / "k230_ttl_camera"
+    / "jetson"
+)
 if str(_DRIVER) not in sys.path:
     sys.path.insert(0, str(_DRIVER))
 
-from k230_camera import K230TtlSnapshotCamera  # noqa: E402
 from protocol import DEFAULT_TTL_BY_ID, HEIGHT, WIDTH  # noqa: E402
 
 
@@ -36,21 +40,28 @@ class K230TtlQ1Camera:
         self.port = port
         self.output_dir = output_dir
         self.stabilization_s = stabilization_s
-        self._cam = K230TtlSnapshotCamera(port=port)
+        self._cam = None
         self._preview: np.ndarray | None = None
 
     def open(self) -> None:
+        from k230_camera import K230TtlSnapshotCamera
+
+        self._cam = K230TtlSnapshotCamera(port=self.port)
         self._cam.initialize()
         if not self._cam.health_check():
             raise RuntimeError("CAPTURE_FAILED: K230 TTL health_check failed")
 
     def read_preview(self) -> np.ndarray | None:
+        if self._cam is None:
+            raise RuntimeError("CAPTURE_FAILED: K230 TTL camera is not open")
         # Still capture used as preview — not a live video stream.
         # Never return a previous frame on failure (no stale-frame fallback).
         self._preview = self._cam.capture_snapshot()
         return self._preview
 
     def capture_snapshot(self, cycle_index: int) -> Snapshot:
+        if self._cam is None:
+            raise RuntimeError("CAPTURE_FAILED: K230 TTL camera is not open")
         if self.stabilization_s > 0:
             time.sleep(self.stabilization_s)
         start = time.perf_counter()
@@ -80,4 +91,6 @@ class K230TtlQ1Camera:
         )
 
     def close(self) -> None:
-        self._cam.close()
+        if self._cam is not None:
+            self._cam.close()
+            self._cam = None

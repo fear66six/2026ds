@@ -6,40 +6,68 @@
 |---|---|
 | [HANDOFF.md](HANDOFF.md) | 本地 ↔ Jetson 路径映射与同步规则（队友/AI 接手先看） |
 | [COORDINATE_FRAMES.md](COORDINATE_FRAMES.md) | 参考坐标系、单位换算、标定 JSON、姿态映射 |
-| [CORRECTION_STANDARDS.md](CORRECTION_STANDARDS.md) | 放置/修正判定标准、闭环纠偏逻辑、调参顺序 |
+| [CORRECTION_STANDARDS.md](CORRECTION_STANDARDS.md) | 单次识别、队列规划门限与检查顺序 |
 | [examples/](examples/) | 标定与安全参数 JSON 模板（数值须实机替换） |
 
 ## 任务边界（赛题）
 
 - 来源：`docs/E题_拼图装置.pdf` 第 2 页图 2（可信等级 B）
 - 四片同色碎片：上半区 → 下半区，拼成 **10 cm × 6 cm** 矩形
-- 评分相关：相邻碎片对应顶点距离 ≤ **2 cm**（赛题评分）；代码内部闭环容差更严，见 [CORRECTION_STANDARDS.md](CORRECTION_STANDARDS.md)
+- 评分相关：相邻碎片对应顶点距离 ≤ **2 cm**（赛题评分）；代码内部规划门限更严，见 [CORRECTION_STANDARDS.md](CORRECTION_STANDARDS.md)
 
 ## 程序做什么
 
-每轮：**HOME/观察位 → 抓拍 → 分析四片 → 审计 → 只选并搬 1 块 → 再回同一 HOME**。
+Q1 分成两个入口，但视觉和规划实现只有一份：
 
-生产入口只走一个带令牌的闭环：
+- `plan`：只初始化 K230，在机械臂当前观察位拍摄一张图，识别 A4 和四片碎片，
+  生成完整 `PieceMove` 队列。不初始化 NexArm 或 STM32。
+- `run`：初始化 K230、NexArm 和 STM32，发送 HOME 并等待动作时长结束后调用
+  同一段单次拍照/规划流程，再顺序执行“到吸取位 → 吸合 → 搬运 → 到释放位 → 释放”。
+
+数据流为：
 
 ```text
-K230 TTL → SceneAnalyzer → audit/select/plan_single_move
-  → NexArmRobotExecutor + STM32MagnetController（生产唯一后端）
+K230 TTL → SceneAnalyzer → plan_piece_moves
+  ├─ plan：capture.png + plan.png + scene.json + piece_moves.json
+  └─ run：NexArmRobotExecutor + STM32MagnetController
 ```
 
-命令（在 `2026E/` 下）：
+当前可在 Jetson 上执行的视觉规划命令（在 `2026E/` 下）：
 
 ```bash
-python3 -m q1.main \
+python3 -m q1.main plan \
+  --robot-config q1/config/robot_config.json \
+  --camera-backend k230_ttl \
+  --confirm CAPTURE_AND_PLAN
+```
+
+机械臂标定完成后的完整命令：
+
+```bash
+python3 -m q1.main run \
   --robot-config q1/config/robot_config.json \
   --camera-backend k230_ttl \
   --magnet-backend stm32 \
-  --max-cycles 4 \
   --confirm RUN_Q1
 ```
 
-A4 四角由每帧 `detect_paper` 自动检测。机械臂相关参数只允许放在
-`q1/config/robot_config.json`。缺令牌、缺配置或字段不完整时，
-`real_run_blockers()` 会拒绝启动。
+A4 四角由本次桌面图像的 `detect_paper` 自动检测。`plan` 的时间戳目录只保存
+原图 `capture.png`、规划叠加图 `plan.png`、`scene.json` 和
+`piece_moves.json`，不生成 raw/scene/rectified/overlay/debug 图片树。机械臂与纸面映射参数只放在
+`q1/config/robot_config.json`。
+
+Jetson Python 依赖列在 `requirements-q1.txt`：`numpy`、`cv2` 和 `pyserial`。
+部署后可先做不访问设备的导入检查：
+
+```bash
+python3 -c "import cv2, numpy, serial; print('Q1 imports OK')"
+```
+
+`final.json` 的 `completed=true` 只表示所有位姿指令均已发送且配置动作时长结束，
+不表示 NexArm 反馈确认到位，也不表示已经做过动作后的视觉复核。用户已于
+2026-07-30 确认完整源/目标 Z15 六维位姿到位，
+当前 `direct_pick_release_pose_verified=true`；`run` 仍要求精确的 `RUN_Q1`
+令牌，`physical_pick_verified=false` 继续表示磁吸和最终拼放效果尚未验证。
 
 ## 证据类型约定
 

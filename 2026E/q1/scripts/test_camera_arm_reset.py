@@ -48,14 +48,6 @@ def parse_args(argv=None):
         "--nexarm-port",
         help="override only when the current NexArm endpoint has been physically verified",
     )
-    parser.add_argument(
-        "--preserve-controller-acceleration",
-        action="store_true",
-        help=(
-            "diagnostic after a controller power cycle: do not send "
-            "CMD_SET_GLOBAL_ACC before the single HOME command"
-        ),
-    )
     return parser.parse_args(argv)
 
 
@@ -182,19 +174,6 @@ def magnet_processes() -> list[str]:
     return found
 
 
-def validate_pose(name: str, pose: Pose, limits: dict[str, list[float]]) -> list[str]:
-    violations = []
-    for axis, value in pose.as_dict().items():
-        bounds = limits.get(axis)
-        if bounds is None or len(bounds) != 2:
-            violations.append(f"{name}.{axis}: missing limits")
-        elif not float(bounds[0]) <= value <= float(bounds[1]):
-            violations.append(
-                f"{name}.{axis}={value} outside [{bounds[0]}, {bounds[1]}]"
-            )
-    return violations
-
-
 def write_image(path: Path, frame) -> None:
     if frame is None or getattr(frame, "shape", None) is None:
         raise RuntimeError(f"invalid image for {path.name}")
@@ -261,9 +240,6 @@ def main(argv=None) -> int:
         "motion_executed": False,
         "magnet_called": False,
         "full_q1_executed": False,
-        "controller_acceleration_preserved": bool(
-            args.preserve_controller_acceleration
-        ),
         "checks": {},
         "poses": [],
         "images": {},
@@ -305,30 +281,11 @@ def main(argv=None) -> int:
             not running_magnets, running_magnets or "no matching process"
         )
 
-        violations = validate_pose("HOME_POSE", home, config["workspace_limits"])
-        checks["pose_config_and_project_envelope"] = result(
-            not violations,
-            {
-                "home_pose": home.as_dict(),
-                "violations": violations,
-                "note": (
-                    "software envelope from known project poses; physical clearance "
-                    "is confirmed only by the human RUN_ARM_RESET attestation"
-                ),
-            },
-        )
-        checks["low_speed_config"] = result(
-            int(config["move_duration_ms"]) >= 5000
-            and 1 <= int(config["global_acceleration"]) <= 20,
+        checks["motion_duration_config"] = result(
+            int(config["move_duration_ms"]) > 0,
             {
                 "move_duration_ms": config["move_duration_ms"],
-                "global_acceleration": config["global_acceleration"],
-                "global_acceleration_command": (
-                    "PRESERVED_AFTER_POWER_CYCLE"
-                    if args.preserve_controller_acceleration
-                    else "SET_FROM_CONFIG"
-                ),
-                "acceleration_scale_note": "SDK command exists; numeric scale needs real-machine verification",
+                "pre_home_controller_writes": [],
             },
         )
 
@@ -363,7 +320,6 @@ def main(argv=None) -> int:
                     project_root,
                     nexarm_port,
                     move_duration_ms=int(config["move_duration_ms"]),
-                    global_acceleration=int(config["global_acceleration"]),
                     position_tolerance_mm=float(config["position_tolerance_mm"]),
                     orientation_tolerance_deg=float(
                         config["orientation_tolerance_deg"]
@@ -421,14 +377,6 @@ def main(argv=None) -> int:
             raise RuntimeError("internal preflight error: camera or arm is not open")
 
         logger.warning("RUN_ARM_RESET accepted; starting fixed low-speed sequence")
-        if args.preserve_controller_acceleration:
-            logger.warning(
-                "diagnostic mode: preserving controller acceleration; "
-                "CMD_SET_GLOBAL_ACC will not be sent"
-            )
-        else:
-            arm.configure_low_acceleration()
-
         report["last_target_pose"] = home.as_dict()
         motion_started = True
         report["motion_executed"] = True

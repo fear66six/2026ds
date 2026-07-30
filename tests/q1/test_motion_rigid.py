@@ -5,11 +5,9 @@ from q1.calibration import ArmCoordinateMapper
 from q1.camera import StaticImageCamera
 from q1.executors.simulation import SimulationWorld
 from q1.geometry import apply_rigid_pose, normalize_angle_deg, rigid_placement_transform
-from q1.motion import plan_single_move
+from q1.motion import plan_piece_moves
 from q1.pieces import template_target_vertices_mm
 from q1.runtime_config import Q1RuntimeConfig
-from q1.auditor import audit_scene
-from q1.selector import select_next_piece
 
 
 def test_rigid_placement_recovers_known_translation_and_rotation():
@@ -28,15 +26,12 @@ def test_planner_uses_rigid_target_center_not_bbox_angle(tmp_path):
     world = SimulationWorld()
     snapshot = StaticImageCamera(world.snapshot).capture_snapshot(0)
     scene = SceneAnalyzer().analyze(snapshot, 0)
-    audit = audit_scene(scene, None, None)
-    template_id, details = select_next_piece(scene, audit)
-    plan = plan_single_move(
+    plan = plan_piece_moves(
         scene,
-        template_id,
         ArmCoordinateMapper(None),
         Q1RuntimeConfig(run_root=tmp_path),
-        reason_selected=details["reason"],
-    )
+    )[0]
+    template_id = plan.template_id
     expected = scene.templates[template_id].expected_target_vertices_mm
     _, end_c, angle = rigid_placement_transform(
         np.asarray(scene.templates[template_id].detected_piece.vertices_mm),

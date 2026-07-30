@@ -1,0 +1,14 @@
+LR_IROM1 0x08000000 0x00080000
+{
+  ER_IROM1 0x08000000 0x00080000
+  {
+    startup_stm32f10x_hd.o (RESET, +First)
+    *(InRoot$$Sections)
+    .ANY (+RO)
+  }
+
+  RW_IRAM1 0x20000000 0x00010000
+  {
+    .ANY (+RW +ZI)
+  }
+}

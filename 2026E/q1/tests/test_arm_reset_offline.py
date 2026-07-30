@@ -16,10 +16,5 @@ def test_pose_error_xyz_and_orientation():
     assert error.roll_deg == 1
 
 
-def test_preserve_controller_acceleration_is_explicit_opt_in():
-    assert parse_args([]).preserve_controller_acceleration is False
-    assert (
-        parse_args(["--preserve-controller-acceleration"])
-        .preserve_controller_acceleration
-        is True
-    )
+def test_reset_cli_has_no_acceleration_write_option():
+    assert not hasattr(parse_args([]), "preserve_controller_acceleration")

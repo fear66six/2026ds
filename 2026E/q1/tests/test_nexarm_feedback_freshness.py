@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 import q1.executors.nexarm as nexarm_module
-from q1.executors.nexarm import NexArmRobotExecutor, StaleFeedbackError
+from q1.executors.nexarm import NexArmRobotExecutor
 from q1.models import PaperPose, RobotPose, SingleMovePlan
 from q1.tests.test_q1_master_integration import Q1_ROOT, configured_runtime
 
@@ -23,7 +23,7 @@ def _meta(clock: list[float], discarded: int = 0) -> dict:
     }
 
 
-def test_stale_large_travel_feedback_is_hardware_fault(monkeypatch):
+def test_static_feedback_does_not_block_duration_sequence(monkeypatch):
     config = configured_runtime()
     executor = NexArmRobotExecutor(Q1_ROOT.parent, config)
     start = np.array([168.0, 5.0, 219.0, -86.9, 0.0, 0.0])
@@ -62,17 +62,17 @@ def test_stale_large_travel_feedback_is_hardware_fault(monkeypatch):
     executor.client = FakeClient()
     executor._last_actual = start.copy()
 
-    with pytest.raises(StaleFeedbackError, match="STALE_FEEDBACK_HARDWARE_FAULT"):
-        executor._move_and_wait(target)
+    executor._move_and_wait(target)
 
     attempt = executor._motion_attempts[-1]
-    assert attempt["result"] == "STALE_FEEDBACK_HARDWARE_FAULT"
-    assert attempt["max_observed_feedback_delta_mm"] == 0.0
+    assert attempt["result"] == "DURATION_ELAPSED"
+    assert attempt["telemetry_outcome"] == "NOT_USED_FOR_SEQUENCE_CONTROL"
     assert attempt["physical_evidence"] == "UNPROVEN"
-    assert executor.client.flushes >= 1
+    assert executor.client.flushes == 0
+    assert clock[0] >= 6.0
 
 
-def test_fresh_feedback_change_reaches_target(monkeypatch):
+def test_duration_sequence_does_not_poll_post_command_feedback(monkeypatch):
     config = configured_runtime()
     executor = NexArmRobotExecutor(Q1_ROOT.parent, config)
     start = np.array([168.0, 5.0, 219.0, -86.9, 0.0, 0.0])
@@ -115,12 +115,11 @@ def test_fresh_feedback_change_reaches_target(monkeypatch):
     executor.client = FakeClient()
     executor._last_actual = start.copy()
     executor._move_and_wait(target)
-    assert executor._active_motion_attempt["result"] == "REACHED_WITH_FEEDBACK_CHANGE"
-    assert executor._active_motion_attempt["max_observed_feedback_delta_mm"] > 1.0
+    assert executor._active_motion_attempt["result"] == "DURATION_ELAPSED"
     assert clock[0] >= 6.0
 
 
-def test_magnet_starts_only_after_pick_feedback(monkeypatch):
+def test_magnet_starts_after_pick_duration(monkeypatch):
     config = configured_runtime()
     executor = NexArmRobotExecutor(Q1_ROOT.parent, config)
     order: list[str] = []
@@ -177,8 +176,8 @@ def test_magnet_starts_only_after_pick_feedback(monkeypatch):
         "magnet_session_enter",
         "magnet_on",
         "magnet_healthy",
-        "magnet_healthy",
         "move:5",
+        "magnet_healthy",
         "magnet_off",
     ]
     assert result.details["physical_evidence"] == "UNPROVEN"

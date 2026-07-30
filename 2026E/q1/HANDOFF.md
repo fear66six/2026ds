@@ -97,19 +97,21 @@ python3 -m q1.scripts.test_camera_arm_reset --confirm RUN_ARM_RESET
 
 当前 `robot_config.json` 要点：
 
-- 唯一位姿字段：`home_pose = [168, 0, 230, -88, 1, 1]`
+- 唯一位姿字段：`home_pose = [175, 0, 210, -90, 0, 0]`
 - **已删除**复位配置中的独立 `observe_pose`；正式 Q1 观察位也统一为同一 HOME（`runtime_config.observe_pose` / safety 的 `home_pose`）
 - `position_tolerance_mm = 10.0`（用户在重复 HOME 实测后明确批准）
-- 正式工作区、纸面到机械臂矩阵、腕部、高度、速度/加速度和到位判定均只从该文件读取
-- 旧 HOME `[173,4,226,-84.4,0,0]` 在当前负载下重复停在 `[168,5,215,-88,1,1]`，且近邻重发无坐标/舵机变化。用户于 2026-07-30 选择 `[168,0,230,-88,1,1]` 作为 HOME；相对稳定反馈约 ΔY=5 mm、ΔZ=15 mm，若反馈不变将超过 10 mm 到位容差。这是项目目标调整，不代表 AT32 到舵机的执行故障已修复
-- 正式抓放使用 `motion_mode=direct_pose`：只发送完整源 Z25 和完整目标 Z25，不生成固定 XY 升降或固定 Z 横移航点
-- 运行 `20260729_153642_988359` 中操作者确认 Z25 方向发生了物理运动，但坐标/舵机反馈全程停在 HOME。正式配置因此保持 `direct_pick_release_pose_verified=false`；大行程命令后若新鲜反馈无变化，判为 `STALE_FEEDBACK_HARDWARE_FAULT` 并硬停，不得发送下一位姿或磁铁 ON
+- 纸面到机械臂矩阵、腕部方向、高度和动作时间均只从该文件读取
+- 旧 HOME `[173,4,226,-84.4,0,0]` 在当前负载下重复停在 `[168,5,215,-88,1,1]`，且近邻重发无坐标/舵机变化。项目曾按 D-029 使用 `[168,0,230,-88,1,1]`、按 D-034 使用 `[180,0,200,-90,0,0]`；用户于 2026-07-30 再按 D-036 将当前 HOME 改为 `[175,0,210,-90,0,0]` 以拍全纸张。配置修改本身不证明实机到位
+- 正式抓放使用 `motion_mode=direct_pose`：只发送完整源 Z15 和完整目标 Z15，不生成固定 XY 升降或固定 Z 横移航点
+- 串口打开并完成固件版本/当前位姿读取后，第一条控制器写命令就是 HOME `set_pose`；Q1 不再发送 `CMD_SET_GLOBAL_ACC`
+- 运行 `20260729_153642_988359` 中操作者确认 Z25 方向发生了物理运动，但坐标/舵机反馈全程停在 HOME。该记录保留为历史故障证据；用户于 2026-07-30 进一步确认完整源/目标 Z15 六维位姿均已到位，当前 `direct_pick_release_pose_verified=true`
+- 当前 NexArm 坐标与舵机反馈在已观察到的物理运动中仍会保持陈旧；正式 `run`
+  不再用这组反馈控制流程，每条完整位姿发送后按 `move_duration_ms=6000` 推进
 - STM32 电磁铁固定端点、500 ms 租约及吸合/释放等待也集中在该文件；生产 Q1 已固定为 `stm32`，`sim` 参数会被拒绝
 - 刚体规划最大残差必须不超过 `vertex_max_error_mm=8.0`，否则以 `PLAN_GEOMETRY_RESIDUAL` 停止
 - 当前自备纯色四片与题图模板为一致反面手性；第1问目标由 `q1/config/puzzle_geometry.py` 的 `TARGET_LAYOUT_MODE=mirror_x` 做整图镜像。单块变换仍禁止反射；扑克牌/现场未知碎片不得复用
 - 正式抓放：`move_to_observe_pose` 已改为直接到 HOME，不再走 Z=200 下降路径
-- 到位超时时不再发送运动，但会保存 `captures/home_timeout.jpg` 供构图调参
-- 不要再把 HOME 直接设在 `workspace_limits` 边界上；软件范围必须比 HOME 略大
+- 旧复位脚本仍是历史诊断入口，不再与 `q1.main plan` 串联作为正式流程
 
 K230 固定口：
 
@@ -166,58 +168,65 @@ python tools/search_docs.py "关键词"
 
 > **本地是编辑源，Jetson 是运行源。改了本地可执行逻辑，就同步 Jetson；查路径先看本文件。**
 
-## 7. Q1 唯一正式闭环入口（2026-07-30）
+## 7. Q1 视觉规划与完整执行入口（2026-07-30）
 
-旧的无确认分析、`RUN_Q1_HOME` 和 `RUN_Q1_ARM` 三档入口已删除。唯一令牌为
-`RUN_Q1`；缺少精确令牌时在打开任何硬件前拒绝启动。
+旧的无确认分析、`RUN_Q1_HOME` 和 `RUN_Q1_ARM` 三档入口已删除。当前分为：
+
+- `plan` + `CAPTURE_AND_PLAN`：只打开 K230，单次拍照并生成完整规划，不初始化 NexArm/STM32。
+- `run` + `RUN_Q1`：HOME、单次拍照规划、顺序执行完整抓放队列。
+
+先同步 `q1/`、`drivers/k230_ttl_camera/` 和 `requirements-q1.txt`。当前可执行：
 
 ```bash
 cd /home/jetson/2026E
-python3 -m q1.main \
+python3 -m q1.main plan \
   --robot-config q1/config/robot_config.json \
   --camera-backend k230_ttl \
-  --magnet-backend stm32 \
-  --max-cycles 4 \
-  --confirm RUN_Q1
+  --confirm CAPTURE_AND_PLAN
 ```
 
-真实磁铁版本只在现场已确认供电、共地、MOSFET、续流保护和急停手段后使用：
+该命令只生成时间戳目录中的 `capture.png`、`plan.png`、`scene.json` 和
+`piece_moves.json`。`plan` 不检查真实抓放位姿验证标志。
+
+完整抓放当前配置已通过 V-013 位姿门禁，使用：
 
 ```bash
-python3 -m q1.main \
+python3 -m q1.main run \
   --robot-config q1/config/robot_config.json \
   --camera-backend k230_ttl \
   --magnet-backend stm32 \
-  --max-cycles 4 \
   --confirm RUN_Q1
 ```
 
-A4 四角像素由每帧 `detect_paper` 自动检测，不再使用 `paper_calibration.json`。
+缺少精确令牌、配置不完整或未来重新把
+`direct_pick_release_pose_verified` 置为 `false` 时，`run` 在打开任何硬件前
+拒绝启动。
 
-当前 HOME/观察位为 `(173,4,226,-84.4,0,0)`。曾尝试提高 15 mm 改善 A4
-构图，但 Z241 实测未到位，现已回退。Z226 只表示 HOME 本身，不再作为转运高度。
+A4 四角像素由初始桌面图像的 `detect_paper` 自动检测，不再使用
+`paper_calibration.json`。主流程为：
 
-目标闭环为：HOME（新鲜反馈确认）→ 拍照分析 → 审计 → 选一片 → 规划 →
-一条完整 `set_pose` 从 HOME 插补到源 `(x,y,25,pitch,pick_roll,claw)` →
-**源点新鲜反馈确认后**磁铁 ON 并读 STM32 状态 → 一条完整 `set_pose` 插补到目标
-`(x,y,25,pitch,release_roll,claw)` → **目标新鲜反馈确认后**磁铁 OFF 并确认 →
-回 HOME → 视觉复核 → 下一片。执行器不再发送分轴航点。陈旧/无法关联到本次
-命令的反馈、到位超时或磁铁状态异常一律 `HARDWARE_FAULT`：磁铁安全关闭，
-不发送恢复或后续位姿。遥测变化只记为 `FEEDBACK_CONFIRMED` /
-`physical_evidence=UNPROVEN`，不得写成“已证明物理运动”。
+```text
+初始化相机 → 初始化 NexArm → 初始化 STM32
+→ 发送 HOME/观察位并等待配置动作时长
+→ 单次拍照、识别、拼图求解
+→ 一次生成 P1..P4 PieceMove 队列
+→ 逐项执行吸取、吸合、搬运、释放
+→ 队列耗尽
+```
 
-当前配置为 `direct_pick_release_pose_verified=false`，在 flush 后的新鲜反馈
-闭环于实机证明前，规划会保存但不会发送抓放位姿。生产 Q1 固定使用 STM32；
-不写 `--magnet-backend` 时默认也是 `stm32`，传入 `sim` 会直接拒绝。STM32
-使用 500 ms 看门狗租约，搬运期间每 250 ms 续租；续租失败、串口异常或状态
-异常会停止后续位姿并尽力紧急断电。`physical_pick_enabled=true` 表示真实通电
-路径已启用；首次动作后的下一轮视觉审计若将上一块判为 `PLACED_OK`，本次运行的
-`physical_pick_verified` 才更新为 true，并写入 `physical_pick_verification.json`。
+每个 `PieceMove` 仍由完整刚体变换生成源/目标位置和腕部角度；执行器只发送
+已配置的完整六维 `set_pose` 目标。源位姿的配置动作时长结束后磁铁 ON，目标
+位姿的配置动作时长结束后磁铁 OFF。STM32 续租失败、磁铁状态异常或命令异常
+仍会停止队列并关闭电磁铁。
 
-每条位姿命令写入独立 `motion_attempts`（目标、起始反馈、原始响应元数据、
-样本、缓冲清理、时长、新鲜度判定、磁铁事件），成功与失败均落在
-`output/runs/q1/<run_id>/` 的 `execution_result.json` / `events.jsonl` /
-`failure.json`。
+生产 Q1 固定使用 STM32；不写 `--magnet-backend` 时默认也是 `stm32`，传入
+`sim` 会直接拒绝。STM32 使用 500 ms 看门狗租约，搬运期间每 250 ms 续租。
+`physical_pick_enabled=true` 只表示真实通电路径存在；单次观察流程不做动作后
+视觉复核，因此不会在运行中把 `physical_pick_verified` 自动改成 true。
+
+每条位姿命令写入独立 `motion_attempts`（目标、动作时长和时间完成状态）。
+每次运行只拍一张正式图 `capture.png`，并输出 `plan.png`、`scene.json` 和
+`piece_moves.json`；每片结果在 `moves/`，汇总为 `final.json` 或 `failure.json`。
 
 运行目录创建后会立即在终端打印：
 

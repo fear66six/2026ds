@@ -1,4 +1,4 @@
-"""Q1 单步视觉闭环的数据模型。"""
+"""Q1 视觉识别、队列规划与执行数据模型。"""
 
 from __future__ import annotations
 
@@ -15,15 +15,7 @@ class PieceTaskStatus(str, Enum):
     UNPLACED = "UNPLACED"
     PLACED_OK = "PLACED_OK"
     PLACED_OFFSET = "PLACED_OFFSET"
-    RELEASE_UNCONFIRMED = "RELEASE_UNCONFIRMED"
-    RELEASE_FAILED = "RELEASE_FAILED"
-    PICK_FAILED = "PICK_FAILED"
-    DROPPED_DURING_TRANSFER = "DROPPED_DURING_TRANSFER"
-    PIECE_TEMPORARILY_MISSING = "PIECE_TEMPORARILY_MISSING"
-    PIECE_IDENTITY_AMBIGUOUS = "PIECE_IDENTITY_AMBIGUOUS"
-    PIECE_OUTSIDE_EXPECTED_REGION = "PIECE_OUTSIDE_EXPECTED_REGION"
     MISSING = "MISSING"
-    UNKNOWN = "UNKNOWN"
 
 
 @dataclass
@@ -137,6 +129,10 @@ class SingleMovePlan:
     rotate_pose: RobotPose | None = None
 
 
+# Program-design name for one item in the initial ordered move queue.
+PieceMove = SingleMovePlan
+
+
 @dataclass
 class ExecutionResult:
     ok: bool
@@ -144,21 +140,3 @@ class ExecutionResult:
     reason: str = ""
     release_confirmed: bool = False
     details: dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass
-class AuditResult:
-    all_complete: bool
-    placed_ok: set[str]
-    placed_offset: set[str]
-    remaining: set[str]
-    moved_remaining: set[str]
-    release_failed_template: str | None
-    missing_templates: set[str]
-    requires_reanalysis: bool
-    warnings: list[str] = field(default_factory=list)
-    pick_failed_template: str | None = None
-    dropped_template: str | None = None
-    temporarily_missing_template: str | None = None
-    recovery_template: str | None = None
-    recovery_mode: str | None = None

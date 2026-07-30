@@ -19,8 +19,6 @@ class ArmCoordinateMapper:
         self._matrix: np.ndarray | None = None
         self.wrist_roll_zero_deg: float | None = None
         self.wrist_roll_sign: float | None = None
-        self.wrist_roll_min_deg: float | None = None
-        self.wrist_roll_max_deg: float | None = None
         self.default_pitch_deg: float = -90.0
         self.default_claw: float = 0.0
         if path is not None and path.exists():
@@ -33,10 +31,6 @@ class ArmCoordinateMapper:
                 self.wrist_roll_zero_deg = float(data["wrist_roll_zero_deg"])
             if "wrist_roll_sign" in data:
                 self.wrist_roll_sign = float(data["wrist_roll_sign"])
-            if "wrist_roll_min_deg" in data:
-                self.wrist_roll_min_deg = float(data["wrist_roll_min_deg"])
-            if "wrist_roll_max_deg" in data:
-                self.wrist_roll_max_deg = float(data["wrist_roll_max_deg"])
             if "default_pitch_deg" in data:
                 self.default_pitch_deg = float(data["default_pitch_deg"])
             if "default_claw" in data:
@@ -49,22 +43,18 @@ class ArmCoordinateMapper:
         return (
             self.wrist_roll_zero_deg is not None
             and self.wrist_roll_sign is not None
-            and self.wrist_roll_min_deg is not None
-            and self.wrist_roll_max_deg is not None
         )
 
     def map_in_plane_rotation(
         self, delta_deg: float, *, pick_roll_deg: float | None = None
     ) -> WristRotationResult:
         if not self.wrist_mapping_ready():
-            raise RuntimeError("CALIBRATION_REQUIRED: 缺少腕部 roll 零位/方向/范围标定")
+            raise RuntimeError("CALIBRATION_REQUIRED: 缺少腕部 roll 零位/方向标定")
         pick = float(self.wrist_roll_zero_deg if pick_roll_deg is None else pick_roll_deg)
         return choose_wrist_release_roll(
             pick_roll_deg=pick,
             rotation_delta_deg=float(delta_deg),
             wrist_roll_sign=float(self.wrist_roll_sign),
-            roll_min_deg=float(self.wrist_roll_min_deg),
-            roll_max_deg=float(self.wrist_roll_max_deg),
         )
 
     def paper_to_robot(

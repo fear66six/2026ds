@@ -18,7 +18,9 @@ class K230SnapshotAdapter:
         self._camera: Any = None
 
     def _load_module(self) -> ModuleType:
-        driver_dir = self.project_root / "hardware" / "k230_ttl_camera"
+        driver_dir = (
+            self.project_root / "drivers" / "k230_ttl_camera" / "jetson"
+        )
         source = driver_dir / "k230_camera.py"
         if not source.is_file():
             raise RuntimeError(f"K230 camera implementation missing: {source}")

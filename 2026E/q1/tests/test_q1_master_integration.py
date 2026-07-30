@@ -16,7 +16,7 @@ from q1.executors.nexarm import NexArmRobotExecutor
 from q1.geometry import compute_rigid_transform
 from q1.main import build_controller, parse_args
 from q1.models import ExecutionResult, RobotPose, SingleMovePlan, PaperPose
-from q1.motion import _validate_pose_workspace, plan_single_move
+from q1.motion import plan_single_move
 from q1.pieces import template_target_vertices_mm
 from q1.runtime_config import Q1RuntimeConfig
 from q1.vision import PaperFrame, detect_divider_line
@@ -38,7 +38,6 @@ def configured_runtime(**overrides) -> Q1RuntimeConfig:
         "pick_height",
         "release_height",
         "move_duration_ms",
-        "global_acceleration",
         "magnet_settle_ms",
         "magnet_release_settle_ms",
         "magnet_lease_ms",
@@ -46,7 +45,6 @@ def configured_runtime(**overrides) -> Q1RuntimeConfig:
         "orientation_tolerance_deg",
         "motion_timeout_s",
         "vertex_max_error_mm",
-        "paper_corner_drift_limit_px",
     ):
         setattr(config, key, robot[key])
     config.motion_mode = robot["motion_mode"]
@@ -56,9 +54,6 @@ def configured_runtime(**overrides) -> Q1RuntimeConfig:
     config.motion_calibration_status = robot["motion_calibration_status"]
     config.physical_pick_verified = robot["physical_pick_verified"]
     config.idle_stable_samples = robot["stable_samples"]
-    config.workspace_limits = {
-        axis: tuple(bounds) for axis, bounds in robot["workspace_limits"].items()
-    }
     return config
 
 
@@ -88,16 +83,12 @@ def test_landscape_paper_uses_known_halfway_divider():
     assert detect_divider_line(frame, paper) == pytest.approx(DIVIDER_Y_CM)
 
 
-def test_wrist_sign_boundaries_and_out_of_range_pick_rejected():
+def test_wrist_sign_mapping_has_no_software_range_limit():
     mapper = ArmCoordinateMapper(ROBOT_CONFIG)
     assert mapper.map_in_plane_rotation(0).release_roll_deg == pytest.approx(0)
     assert mapper.map_in_plane_rotation(30).release_roll_deg == pytest.approx(30)
     assert mapper.map_in_plane_rotation(-30).release_roll_deg == pytest.approx(-30)
-    assert mapper.map_in_plane_rotation(0, pick_roll_deg=360).valid
-    assert mapper.map_in_plane_rotation(0, pick_roll_deg=-360).valid
-    result = mapper.map_in_plane_rotation(0, pick_roll_deg=360.01)
-    assert not result.valid
-    assert result.rejection_reason == "WRIST_PICK_ROLL_OUT_OF_RANGE"
+    assert mapper.map_in_plane_rotation(30, pick_roll_deg=720).release_roll_deg == 750
 
 
 def test_sim_is_rejected_and_stm32_requires_port():
@@ -133,19 +124,24 @@ def test_robot_parameters_are_consolidated_and_direct_pose_is_required():
         "pick_height",
         "release_height",
         "move_duration_ms",
-        "global_acceleration",
         "position_tolerance_mm",
-        "workspace_limits",
     }
     assert required <= robot.keys()
     assert robot["position_tolerance_mm"] == 10.0
     assert robot["motion_mode"] == "direct_pose"
-    assert robot["direct_pick_release_pose_verified"] is False
+    assert robot["direct_pick_release_pose_verified"] is True
     assert robot["physical_pick_verified"] is False
+    assert robot["home_pose"] == [175.0, 0.0, 210.0, -90.0, 0.0, 0.0]
+    assert robot["pick_height"] == 15.0
+    assert robot["release_height"] == 15.0
+    assert "workspace_limits" not in robot
+    assert "wrist_roll_min_deg" not in robot
+    assert "wrist_roll_max_deg" not in robot
     assert "single_pose_calibration" not in robot
     assert robot["magnet_port"].endswith("5B7A030191-if00")
     assert "safe_height" not in robot
     assert "release_peel_delta" not in robot
+    assert "global_acceleration" not in robot
 
 
 def test_planning_residual_over_limit_blocks_before_robot_pose(monkeypatch):
@@ -207,55 +203,7 @@ def test_current_solid_piece_layout_uses_global_mirror_not_piece_reflection():
     assert transform.max_error_mm == pytest.approx(2.2648, abs=0.01)
 
 
-def test_timeout_stops_before_sending_next_pose():
-    config = configured_runtime()
-    executor = NexArmRobotExecutor(Q1_ROOT.parent, config)
-
-    class FakeClient:
-        def __init__(self):
-            self.targets = []
-
-        def set_pose(self, *values):
-            self.targets.append(values)
-
-    executor.client = FakeClient()
-    executor.wait_until_idle = lambda _timeout: False
-    executor._active_motion_attempt = {"result": "NO_FEEDBACK_CHANGE_TIMEOUT"}
-
-    def fake_move(pose):
-        executor.client.set_pose(
-            pose.x, pose.y, pose.z, pose.pitch, pose.roll, pose.claw, pose.duration_ms
-        )
-        executor._last_pose = np.array(
-            [pose.x, pose.y, pose.z, pose.pitch, pose.roll, pose.claw]
-        )
-
-    executor._move = fake_move
-    pose = RobotPose(200, 0, 226, -84.4, 0, 0, 6000)
-    plan = SingleMovePlan(
-        0,
-        "P1",
-        PaperPose(1, 1),
-        PaperPose(2, 2),
-        pose,
-        pose,
-        (1, 1),
-        pose,
-        pose,
-        pose,
-        pose,
-        0,
-        1,
-        "test",
-        0,
-        rotate_pose=pose,
-    )
-    with pytest.raises(TimeoutError):
-        executor.execute_single_move(plan, SimpleNamespace(events=[]))
-    assert len(executor.client.targets) == 1
-
-
-def test_initialize_handshakes_and_sets_low_acceleration(tmp_path):
+def test_initialize_handshakes_without_pre_home_controller_write(tmp_path):
     sdk = tmp_path / "hardware" / "nexarm" / "jetson_to_nexarm" / "nexarm_sdk.py"
     sdk.parent.mkdir(parents=True)
     sdk.write_text(
@@ -265,7 +213,7 @@ import time
 class NexArmClient:
     def __init__(self, port):
         self.port = port
-        self.acceleration = None
+        self.write_commands = []
         self.last_rx_diagnostics = {}
     def open(self): pass
     def close(self): pass
@@ -283,13 +231,14 @@ class NexArmClient:
                 "skipped_packets": 0,
             },
         )
-    def set_global_acceleration(self, value): self.acceleration = value
+    def set_global_acceleration(self, value):
+        self.write_commands.append(("set_global_acceleration", value))
 """,
         encoding="utf-8",
     )
     executor = NexArmRobotExecutor(tmp_path, configured_runtime())
     executor.initialize()
-    assert executor.client.acceleration == 10
+    assert executor.client.write_commands == []
     assert executor._initial_status["firmware_version"] == "1.0.0"
     assert executor._initial_status["initial_pose"] == [
         173.0,
@@ -299,42 +248,18 @@ class NexArmClient:
         0.0,
         0.0,
     ]
-    assert executor._initial_status["global_acceleration"] == 10
+    assert "global_acceleration" not in executor._initial_status
 
 
-def test_planning_workspace_rejects_out_of_range():
-    config = configured_runtime()
-    bad = RobotPose(400, 0, 250, -84.4, 0, 0, 6000)
-    with pytest.raises(RuntimeError, match="PLAN_OUT_OF_WORKSPACE"):
-        _validate_pose_workspace(bad, config)
-
-
-def test_wait_does_not_finish_before_command_duration(monkeypatch):
+def test_move_sequence_does_not_finish_before_command_duration(monkeypatch):
     config = configured_runtime()
     executor = NexArmRobotExecutor(Q1_ROOT.parent, config)
     target = np.array([173.0, 4.0, 226.0, -84.4, 0.0, 0.0])
     clock = [0.0]
 
     class FakeClient:
-        def flush_input_buffer(self):
-            return 0
-
-        def get_current_coords(self, timeout):
-            return SimpleNamespace(
-                x=target[0],
-                y=target[1],
-                z=target[2],
-                pitch=target[3],
-                roll=target[4],
-                claw=target[5],
-                servo_positions=(100, 200, 300, 400, 500, 600),
-                meta={
-                    "bytes_discarded": 0,
-                    "request_started_s": clock[0],
-                    "response_received_s": clock[0] + 0.01,
-                    "skipped_packets": 0,
-                },
-            )
+        def set_pose(self, *_values):
+            return None
 
     monkeypatch.setattr(nexarm_module.time, "monotonic", lambda: clock[0])
     monkeypatch.setattr(
@@ -343,27 +268,9 @@ def test_wait_does_not_finish_before_command_duration(monkeypatch):
         lambda seconds: clock.__setitem__(0, clock[0] + seconds),
     )
     executor.client = FakeClient()
-    executor._last_pose = target
-    executor._last_command_started_s = 0.0
-    executor._last_command_duration_s = 6.0
-    executor._active_motion_attempt = {
-        "target": target.tolist(),
-        "duration_ms": 6000,
-        "command_start_actual": target.tolist(),
-        "command_start_servos": [100, 200, 300, 400, 500, 600],
-        "command_start_target_position_error_mm": 0.0,
-        "max_observed_feedback_delta_mm": 0.0,
-        "max_observed_servo_delta": 0,
-        "samples": [],
-        "result": "WAITING",
-    }
-
-    assert executor.wait_until_idle(12.0)
+    executor._move_and_wait(RobotPose(*target.tolist(), 6000))
     assert clock[0] >= 6.0
-    assert (
-        executor._active_motion_attempt["result"]
-        == "ALREADY_IN_TOLERANCE_NO_FEEDBACK_CHANGE"
-    )
+    assert executor._active_motion_attempt["result"] == "DURATION_ELAPSED"
 
 
 def test_executor_sends_only_direct_pick_and_release_targets():
@@ -399,9 +306,9 @@ def test_executor_sends_only_direct_pick_and_release_targets():
     assert result.ok
     assert visited == [2, 5]
     assert result.details["trajectory_steps"] == [
-        "direct_home_to_pick_pose_feedback_confirmed",
-        "direct_pick_to_release_pose_feedback_confirmed",
-        "magnet_off_at_reached_release_pose",
+        "direct_home_to_pick_pose_duration_elapsed",
+        "direct_pick_to_release_pose_duration_elapsed",
+        "magnet_off_after_release_pose_duration",
     ]
     assert "real_arm_motion" not in result.details
     assert result.details["physical_evidence"] == "UNPROVEN"
@@ -426,28 +333,28 @@ def test_run_report_announces_copyable_paths_and_latest_pointer(tmp_path, capsys
     assert payload["magnet_backend"] == "stm32"
     assert payload["physical_pick_enabled"] is True
     assert payload["physical_pick_verified"] is False
-    assert "BLOCKED_UNTIL_FRESH_FEEDBACK" in payload["motion_calibration_status"]
+    assert "USER_VERIFIED_Z15_2026-07-30" in payload["motion_calibration_status"]
 
 
-def test_post_move_visual_placed_ok_marks_physical_pick_verified():
-    controller = Q1Controller.__new__(Q1Controller)
-    controller.config = SimpleNamespace(physical_pick_verified=False)
-    controller.previous_action = SimpleNamespace(template_id="P3")
-    controller.executions = [ExecutionResult(True, "P3", details={})]
+def test_unverified_direct_pick_release_blocks_before_hardware_open():
+    config = configured_runtime()
+    config.direct_pick_release_pose_verified = False
+    assert config.direct_pick_release_pose_verified is False
+    assert "DIRECT_PICK_RELEASE_POSE_UNVERIFIED" in config.production_run_blockers()
 
-    class Recorder:
-        writes = []
 
-        def write(self, name, value):
-            self.writes.append((name, value))
-
-    controller.recorder = Recorder()
-    audit = SimpleNamespace(placed_ok={"P3"})
-    controller._record_physical_pick_verification(1, audit)
-
-    assert controller.config.physical_pick_verified is True
-    assert controller.executions[0].release_confirmed is True
-    assert controller.executions[0].details["physical_pick_verified_by_vision"] is True
-    assert controller.recorder.writes[0][0].endswith(
-        "physical_pick_verification.json"
+def test_current_production_config_passes_direct_pose_verification_gate():
+    args = parse_args(
+        [
+            "--robot-config",
+            str(ROBOT_CONFIG),
+            "--confirm",
+            "RUN_Q1",
+        ]
+    )
+    controller = build_controller(args)
+    assert controller.config.direct_pick_release_pose_verified is True
+    assert (
+        "DIRECT_PICK_RELEASE_POSE_UNVERIFIED"
+        not in controller.config.production_run_blockers()
     )

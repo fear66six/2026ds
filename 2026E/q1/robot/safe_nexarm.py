@@ -78,7 +78,6 @@ class NexArmResetController:
         port: str,
         *,
         move_duration_ms: int,
-        global_acceleration: int,
         position_tolerance_mm: float,
         orientation_tolerance_deg: float,
         stable_samples: int,
@@ -87,7 +86,6 @@ class NexArmResetController:
         self.project_root = project_root
         self.port = port
         self.move_duration_ms = move_duration_ms
-        self.global_acceleration = global_acceleration
         self.position_tolerance_mm = position_tolerance_mm
         self.orientation_tolerance_deg = orientation_tolerance_deg
         self.stable_samples = stable_samples
@@ -138,13 +136,6 @@ class NexArmResetController:
             "firmware_version": version,
             "current_pose": current.as_dict(),
         }
-
-    def configure_low_acceleration(self) -> None:
-        if self._client is None:
-            raise RuntimeError("NexArm is not open")
-        if not 1 <= self.global_acceleration <= 255:
-            raise ValueError("global_acceleration must be in [1, 255]")
-        self._client.set_global_acceleration(self.global_acceleration)
 
     def read_pose(self, timeout: float = 0.5) -> Pose:
         if self._client is None:

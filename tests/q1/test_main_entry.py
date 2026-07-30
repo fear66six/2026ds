@@ -26,7 +26,6 @@ def test_real_run_requires_wrist_roll_mapping(tmp_path: Path):
         release_height=38.0,
         move_duration_ms=1500,
         magnet_settle_ms=200,
-        workspace_limits={"x": (0.0, 300.0), "y": (-200.0, 200.0), "z": (0.0, 250.0)},
     ).real_run_blockers()
     assert any("腕部 roll" in item for item in blockers)
 
@@ -37,6 +36,6 @@ def test_build_controller_blocks_without_calibration(tmp_path: Path, monkeypatch
     try:
         build_controller(args)
     except RuntimeError as exc:
-        assert "RealRun禁止启动" in str(exc)
+        assert "REAL_RUN_BLOCKED" in str(exc)
     else:
         raise AssertionError("expected RealRun blockers")

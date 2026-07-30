@@ -135,22 +135,23 @@ world_mm = template_local_cm * 10 + target_origin_mm
 规划得到 `rotation_delta_deg`（源轮廓刚性对齐到目标模板的旋转角），再映射：
 
 ```text
-roll = wrist_roll_zero_deg + wrist_roll_sign * rotation_delta_deg
-roll = clamp(roll, wrist_roll_min_deg, wrist_roll_max_deg)
+pick_roll = wrist_roll_zero_deg
+release_roll = pick_roll + wrist_roll_sign * normalize(rotation_delta_deg)
 ```
+
+当前不做软件腕部角度裁剪。
 
 | 字段 | 含义 |
 |---|---|
 | `wrist_roll_zero_deg` | 碎片目标姿态为 0° 时的腕部 roll |
 | `wrist_roll_sign` | `+1` 或 `-1`，对齐纸面正转到 roll 正转 |
-| `wrist_roll_min_deg` / `max` | 安全限幅 |
 | `default_pitch_deg` | 默认俯仰（示例 -90） |
 | `default_claw` | 夹爪字段（电磁铁方案下通常 0） |
 
 **工程决策**：用户确认纸面内旋转走 NexArm `roll`。  
 **待实机验证**：零位与符号（`docs/TODO_VERIFY.md` V-009）。小角度（±15°）验证后再写进 JSON。
 
-### 5.3 高度与安全（来自 robot_config.json）
+### 5.3 高度与运动（来自 robot_config.json）
 
 `--robot-config` 必填，否则禁止启动：
 
@@ -161,15 +162,14 @@ roll = clamp(roll, wrist_roll_min_deg, wrist_roll_max_deg)
 | `release_height` | 释放高度 z |
 | `move_duration_ms` | 单步 `set_pose` 时长 |
 | `magnet_settle_ms` | 吸合后等待 |
-| `workspace_limits` | `x/y/z` 允许区间 |
 | `home_pose` | **唯一**观察/拍照位，与复位 HOME 统一：`[x,y,z,pitch,roll,claw]` 或再加 `duration_ms` |
 | `position_tolerance_mm` | 三维合成到位容差，当前用户批准为 10 mm |
 | `orientation_tolerance_deg` | pitch/roll/claw 到位容差 |
 | `nexarm_port` | 固定 NexArm by-id 设备路径 |
 
-当前 HOME/观察位为 `(173,4,226,-84.4,0,0)`，时长 6000 ms，到位位置容差
-10 mm。Z241 候选实测停在 Z219，已回退；工作区和历史依据见
-`robot_config.json`，低高度路径仍为 UNVERIFIED。
+当前 HOME/观察位为 `(175,0,210,-90,0,0)`，时长 6000 ms，到位位置容差
+10 mm。吸取和释放高度均为 Z15；用户已于 2026-07-30 确认完整源/目标六维
+位姿到位。
 
 ## 6. 单步规划用的参考点
 
@@ -190,30 +190,31 @@ rigid_placement_transform(当前顶点_mm, 目标模板顶点_mm)
 
 正式执行依次调用一次完整 `set_pose(source)` 和一次完整 `set_pose(release)`。
 XYZ/Pitch/Roll/Claw 由同一条厂商坐标命令发送，不构造固定 XY 的竖直升降或
-固定 Z 的横向转运航点。SDK 命令形式不等于物理路径已经验证：两个 Z25 目标及
-源到目标的低位扫掠仍为 `UNVERIFIED`。
+固定 Z 的横向转运航点。两个 Z15 目标的完整位姿到位已由用户实机确认；这不等于
+磁吸可靠性或最终拼放精度已经验证。
 
 ## 7. 运行产物里怎么核对坐标
 
-每次闭环写入 `runs/q1/<run_id>/cycle_XX/`：
+每次运行写入 `output/runs/q1/<run_id>/`：
 
 | 文件 | 看什么 |
 |---|---|
-| `raw.png` / `rectified.png` | 原图与纸面矫正图 |
-| `overlay.png` | 检测轮廓 + **10×6 目标外框** + 四片目标边界 |
+| `capture.png` | 本次唯一生产输入图像 |
 | `scene.json` | 各片 `center_mm`、`vertices_mm`、误差 |
-| `single_move_plan.json` | 本轮源/目标纸面与机器人位姿 |
-| `audit.json` | 是否完成、偏位、释放失败 |
+| `piece_moves.json` | P1..P4 队列、源/目标纸面与机器人位姿 |
+| `moves/*.json` | 每片命令与执行结果 |
+| `final.json` / `failure.json` | 汇总或停止原因 |
 
-调坐标时优先对比：`overlay` 上橙色目标框是否压在你期望的下半区位置。
+生产流程不再生成矫正图和叠加图。需要可视核对时，用 `capture.png` 运行独立离线
+视觉诊断，不把调试图片生成接回生产循环。
 
 ## 8. 调坐标时的检查顺序
 
-1. 纸面四角标定：矫正后 A4 边框是否贴齐  
-2. 分界线：中线是否落在物理白线附近  
-3. 目标原点：`overlay` 中 10×6 框位置  
-4. 手测 1～2 个纸面点 → 机械臂点，拟合/校验 `paper_to_robot_matrix`  
-5. 小角度 roll：确认 `wrist_roll_sign`  
-6. 再开闭环搬一块，查 `single_move_plan.json` 与下一轮 `audit.json`
+1. 离线检查 `capture.png` 的 A4 四角检测
+2. 核对 `scene.json` 的分界线与上下区域
+3. 核对 `piece_moves.json` 中 10×6 目标顶点
+4. 手测 1～2 个纸面点 → 机械臂点，拟合/校验 `paper_to_robot_matrix`
+5. 小角度 roll：确认 `wrist_roll_sign`
+6. V-013 通过后，再按批准流程做受控单目标验证
 
 任何一步未通过，不要继续提高运动速度或通电时间。

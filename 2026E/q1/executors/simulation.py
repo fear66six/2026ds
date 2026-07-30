@@ -123,11 +123,6 @@ class SimulationRobotExecutor:
         self.phase_log.append("MAGNET_HOLD_STOP")
         return ExecutionResult(ok, plan.template_id, reason, release_confirmed=ok)
 
-    def execute_release_recovery(self, plan: SingleMovePlan, attempt: int) -> ExecutionResult:
-        self.phase_log.append(f"RELEASE_RECOVERY_{attempt}")
-        ok, reason = self.world.place(plan)
-        return ExecutionResult(ok, plan.template_id, reason, release_confirmed=ok)
-
     def emergency_stop(self) -> None:
         self.phase_log.append("EMERGENCY_STOP")
 

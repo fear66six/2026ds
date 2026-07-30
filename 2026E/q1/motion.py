@@ -1,4 +1,4 @@
-"""基于最新场景只规划一块；使用完整 R、t 与区分 pick/release roll。"""
+"""从一次桌面识别结果生成有序 PieceMove 队列。"""
 
 from __future__ import annotations
 
@@ -7,18 +7,9 @@ import numpy as np
 from .calibration import ArmCoordinateMapper
 from .config import DIVIDER_Y_CM
 from .geometry import apply_rigid_transform, compute_rigid_transform, normalize_angle_deg
-from .models import PaperPose, SceneAnalysis, SingleMovePlan
+from .models import PaperPose, PieceMove, PieceTaskStatus, SceneAnalysis, SingleMovePlan
+from .puzzle_solver import TEMPLATE_IDS
 from .runtime_config import Q1RuntimeConfig
-
-
-def _validate_pose_workspace(pose, config: Q1RuntimeConfig) -> None:
-    limits = config.workspace_limits or {}
-    for axis in ("x", "y", "z", "pitch", "roll", "claw"):
-        value = float(getattr(pose, axis))
-        if axis not in limits or not limits[axis][0] <= value <= limits[axis][1]:
-            raise RuntimeError(
-                f"PLAN_OUT_OF_WORKSPACE: {axis}={value}, limits={limits.get(axis)}"
-            )
 
 
 def plan_single_move(
@@ -58,7 +49,11 @@ def plan_single_move(
     release_point_target_mm = apply_rigid_transform(pick_point_source_mm, transform)
     rotation_delta_deg = normalize_angle_deg(transform.rotation_deg)
 
-    source = PaperPose(float(pick_point_source_mm[0]), float(pick_point_source_mm[1]), piece.angle_deg)
+    source = PaperPose(
+        float(pick_point_source_mm[0]),
+        float(pick_point_source_mm[1]),
+        piece.angle_deg,
+    )
     target = PaperPose(float(release_point_target_mm[0]), float(release_point_target_mm[1]), 0.0)
     if target.y_mm < DIVIDER_Y_CM * 10.0:
         raise RuntimeError(
@@ -73,12 +68,15 @@ def plan_single_move(
         if None in (config.pick_height, config.release_height, config.move_duration_ms):
             raise RuntimeError("CALIBRATION_REQUIRED: 缺少抓取/释放高度或动作时间")
         wrist = mapper.map_in_plane_rotation(rotation_delta_deg)
-        if not wrist.valid:
-            raise RuntimeError(wrist.rejection_reason or "WRIST_ROTATION_OUT_OF_RANGE")
         pick_roll_deg = float(wrist.pick_roll_deg)
         release_roll_deg = float(wrist.release_roll_deg)
 
-        source_robot = mapper.paper_to_robot(source.x_mm, source.y_mm, float(config.pick_height), roll_deg=pick_roll_deg)
+        source_robot = mapper.paper_to_robot(
+            source.x_mm,
+            source.y_mm,
+            float(config.pick_height),
+            roll_deg=pick_roll_deg,
+        )
         pick_robot = source_robot
         target_robot = mapper.paper_to_robot(
             target.x_mm, target.y_mm, float(config.release_height), roll_deg=release_roll_deg
@@ -86,7 +84,6 @@ def plan_single_move(
         release = target_robot
         for pose in (source_robot, target_robot, pick_robot, release):
             pose.duration_ms = int(config.move_duration_ms)
-            _validate_pose_workspace(pose, config)
 
     return SingleMovePlan(
         cycle_index=scene.cycle_index,
@@ -113,3 +110,42 @@ def plan_single_move(
         release_roll_deg=release_roll_deg,
         rotate_pose=rotate_pose,
     )
+
+
+def plan_piece_moves(
+    scene: SceneAnalysis,
+    mapper: ArmCoordinateMapper,
+    config: Q1RuntimeConfig,
+) -> list[PieceMove]:
+    """Build the complete P1..P4 queue from the single initial observation."""
+    if not scene.scene_valid:
+        raise RuntimeError("PLAN_FAILED: initial scene is invalid")
+
+    moves: list[PieceMove] = []
+    for template_id in TEMPLATE_IDS:
+        state = scene.templates.get(template_id)
+        if state is None:
+            raise RuntimeError(f"PLAN_FAILED: missing template state {template_id}")
+        if state.status == PieceTaskStatus.PLACED_OK:
+            continue
+        if (
+            state.status != PieceTaskStatus.UNPLACED
+            or state.detected_piece is None
+            or state.detected_piece.region != "UPPER_SOURCE"
+        ):
+            raise RuntimeError(
+                "PLAN_FAILED: every pending piece must start in the source half; "
+                f"template={template_id}, status={state.status.value}, "
+                f"region={getattr(state.detected_piece, 'region', None)}"
+            )
+
+        move = plan_single_move(
+            scene,
+            template_id,
+            mapper,
+            config,
+            reason_selected="INITIAL_SCENE_P1_TO_P4_QUEUE",
+        )
+        move.cycle_index = len(moves)
+        moves.append(move)
+    return moves
