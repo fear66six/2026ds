@@ -27,6 +27,13 @@
 | `docs/MOSFET驱动15A资料包/例程/` | 模块销售方 | Arduino、STC89、STM32F103 | 驱动示例资料包 | 厂商/销售方示例 ZIP | 仅静态参考控制逻辑 |
 | `TaskSuite_E/` | 用户自建工程 | K230/WonderMK 与现有 Arduino/NexArm 代码体系 | E 题任务套件、视觉/UI、协议和机械臂控制源码 | 用户源码/说明 | 作为现有工程与历史实现参考；不能当作 Jetson API |
 
+## 项目接口文档（工程实现）
+
+| 路径 | 厂商/来源 | 适用设备 | 内容简介 | 文件类型 | 推荐用途 |
+|---|---|---|---|---|---|
+| `docs/interfaces/k230_ttl_camera/` | 本项目 | Hiwonder K230 + Jetson CH343 TTL | 请求式 JPEG 协议、Jetson Python API、接线 | 工程接口文档 | Q1 正式取图；先读 `JETSON_PYTHON_API.md` |
+| `docs/interfaces/magnet_control/` | 本项目 | Jetson + STM32 电磁铁 | USART 电磁铁协议与驱动 API | 工程接口文档 | 吸放控制；与相机 TTL 口不是同一串口 |
+
 ## 历史整理与便捷副本
 
 | 路径 | 厂商/来源 | 适用设备 | 内容简介 | 文件类型 | 推荐用途 |

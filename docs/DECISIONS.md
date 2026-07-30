@@ -71,3 +71,13 @@
 - 影响范围：Q1 视觉分析、运动规划、审计恢复、选择器评分。
 - 当前状态：已采用（离线测试通过）；实机参数见 `docs/TODO_VERIFY.md`。
 - 需要重新评估的条件：实机电磁铁吸取点偏离几何中心需改 `pick_point_source_mm` 定义时。
+
+## D-008 Q1 正式图像链路唯一采用 K230 TTL 请求式 JPEG
+
+- 决策：生产图传仅保留 Hiwonder K230 UART3 TTL → Jetson CH343；固定 460800、1280×720、quality=65、discard=2、chunk=4096；协议 V2；Jetson API 为 `K230TtlSnapshotCamera`。不采用 UVC/`/dev/video0`、HDMI、Wi-Fi、K230 原生 CDC JPEG，也不在运行时切换其它分辨率/波特率。K230 SD 文件由人工部署。
+- 原因：实测在 460800+720p 稳定可用；多套图传实现并存会造成参数漂移与启动竞态。
+- 替代方案：USB CDC / UVC / 降波特率或降分辨率兜底（已否决为生产路径）。
+- 依据：`2026E/drivers/k230_ttl_camera/`；`docs/interfaces/k230_ttl_camera/`；F-013；用户确认人工放置 K230 代码。
+- 影响范围：Q1 `--camera-backend k230_ttl`、观察位稳定后再 `capture_snapshot()`。
+- 当前状态：已采用；链路烟雾与 100 次压测通过。
+- 需要重新评估的条件：换 TTL 适配器导致 by-id 变化，或赛题改用其它相机硬件。

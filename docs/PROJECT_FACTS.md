@@ -121,3 +121,13 @@
 - 适用范围：Q1 视觉匹配、单步规划与完成判定
 - 最后核查时间：2026-07-29
 - 备注：纸面内旋转在规划中映射到 NexArm `set_pose` 的 `roll` 字段；零位/方向/范围须由 `arm_calibration` JSON 实机标定，不得伪造默认值。
+
+## F-013 K230 TTL 请求式 JPEG（460800 / 1280×720）已在本机打通
+
+- 结论：Jetson 经 CH343 USB-TTL（by-id `usb-1a86_USB_Single_Serial_5B7A028646-if00` → `ttyACM1`）与 K230 UART3（TX50/RX51）通信；协议 V2；固定 1280×720、JPEG q=65。烟雾 5/5、连续 100 次 100/100，平均约 2661 ms/帧，P95≈2746 ms，最大≈2828 ms，CRC/解码失败为 0。
+- 来源：`2026E/drivers/k230_ttl_camera/`；Jetson `~/k230_ttl_camera` 烟雾与 `logs/stress_100.json` 输出；`docs/interfaces/k230_ttl_camera/`
+- 来源位置：`protocol.py`；`jetson/k230_camera.py`；实机测试 JSON
+- 可信等级：A（源码 + 实机）
+- 适用范围：当前这套 CH343 序列号与已部署的 K230 `k230_camera_server.py`
+- 最后核查时间：2026-07-30
+- 备注：K230 原生 Kendryte CDC 仅用于 IDE/USBDBG，不作图传；K230 文件由人工写入 SD。

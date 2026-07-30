@@ -19,6 +19,12 @@ from .runtime_config import Q1RuntimeConfig
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description="Q1每轮观察、只规划一块的视觉闭环（仅真实摄像头+机械臂运行）")
     parser.add_argument("--camera-index", type=int, default=0)
+    parser.add_argument(
+        "--camera-backend",
+        choices=("opencv", "k230_ttl"),
+        default="opencv",
+        help="opencv=本机UVC索引；k230_ttl=正式K230 TTL 1280x720@460800",
+    )
     parser.add_argument("--paper-calibration", type=Path)
     parser.add_argument("--arm-calibration", type=Path, help="含 paper_to_robot_matrix 与腕部 roll 标定的 JSON")
     parser.add_argument("--safety-config", type=Path, help="实机安全高度/工作区/电磁铁时序 JSON")
@@ -26,6 +32,12 @@ def parse_args(argv=None):
     parser.add_argument("--magnet-port")
     parser.add_argument("--capture-burst", type=int, default=8)
     parser.add_argument("--settle-time-ms", type=int, default=200)
+    parser.add_argument(
+        "--observe-stabilize-ms",
+        type=int,
+        default=300,
+        help="机械臂回观察位并 idle 后、CAPTURE 前额外稳定等待",
+    )
     parser.add_argument("--max-cycles", type=int, default=16)
     parser.add_argument("--auto-start", action="store_true", help="跳过SPACE预览（风险自测：仅你确认安全后使用）")
     return parser.parse_args(argv)
@@ -85,11 +97,18 @@ def build_controller(args) -> Q1Controller:
     blockers = config.real_run_blockers()
     if blockers:
         raise RuntimeError("RealRun禁止启动: " + "; ".join(blockers))
-    camera = SnapshotCamera(
-        config.camera_index,
-        burst=config.capture_burst,
-        settle_ms=config.settle_time_ms,
-    )
+    if getattr(args, "camera_backend", "opencv") == "k230_ttl":
+        from .k230_ttl_camera_adapter import K230TtlQ1Camera
+
+        camera = K230TtlQ1Camera(
+            stabilization_s=max(0, getattr(args, "observe_stabilize_ms", 300)) / 1000.0,
+        )
+    else:
+        camera = SnapshotCamera(
+            config.camera_index,
+            burst=config.capture_burst,
+            settle_ms=config.settle_time_ms,
+        )
     robot = NexArmRobotExecutor(Path(__file__).resolve().parents[2], config)
     magnet = STM32MagnetController(config.magnet_port or "")
     return Q1Controller(camera=camera, analyzer=analyzer, robot=robot, magnet=magnet, mapper=mapper, config=config)

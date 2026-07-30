@@ -1,0 +1,21 @@
+K230 main.py restore
+====================
+
+Original main.py (SHA256):
+0ab6673a5d5eea37e86abe40d68d1352335b7e96e71879aeab276b11c88017ca
+
+Original content:
+from hw.start import *
+main()
+
+Backups:
+- Jetson: ~/k230_ttl_camera/k230_backups/main.py.bak
+- PC repo: 2026E/drivers/k230_ttl_camera/k230/main.py.original
+
+Restore (on Jetson, with MTP mounted):
+  bash ~/k230_ttl_camera/restore_k230_main.sh
+
+Or manually copy main.py.original / main.py.bak over /sdcard/main.py
+Then power-cycle or press RESET on K230.
+
+boot.py was never modified.
