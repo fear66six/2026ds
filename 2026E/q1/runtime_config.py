@@ -27,15 +27,17 @@ class Q1RuntimeConfig:
     nexarm_port: str | None = None
     magnet_port: str | None = None
 
-    # TaskSuite_E/board_roi_config.h + system_task_handle.cpp::move_observe().
+    # 正式抓放观察位与复位 HOME 统一：拍照/回观察都用同一点。
+    # 数值与 q1/config/arm_reset.json::home_pose 对齐；claw=0（相机安装，不用夹爪）。
+    # 字段名仍为 observe_pose，供 controller.move_to_observe_pose 使用。
     observe_pose: tuple[float, float, float, float, float, float, int] = (
-        200.0,
-        0.0,
-        160.0,
+        173.0,
+        4.0,
+        226.0,
         -90.0,
         0.0,
-        -60.0,
-        1500,
+        0.0,
+        6000,
     )
 
     # 下列实机安全参数没有可直接复用的视觉到机械臂标定，禁止伪造默认值。

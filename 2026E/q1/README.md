@@ -4,6 +4,7 @@
 
 | 文档 | 用途 |
 |---|---|
+| [HANDOFF.md](HANDOFF.md) | 本地 ↔ Jetson 路径映射与同步规则（队友/AI 接手先看） |
 | [COORDINATE_FRAMES.md](COORDINATE_FRAMES.md) | 参考坐标系、单位换算、标定 JSON、姿态映射 |
 | [CORRECTION_STANDARDS.md](CORRECTION_STANDARDS.md) | 放置/修正判定标准、闭环纠偏逻辑、调参顺序 |
 | [examples/](examples/) | 标定与安全参数 JSON 模板（数值须实机替换） |
@@ -16,7 +17,7 @@
 
 ## 程序做什么
 
-每轮：**观察位 → 抓拍 → 分析四片 → 审计 → 只选并搬 1 块 → 再观察**。
+每轮：**HOME/观察位 → 抓拍 → 分析四片 → 审计 → 只选并搬 1 块 → 再回同一 HOME**。
 
 生产入口只走真实链路：
 

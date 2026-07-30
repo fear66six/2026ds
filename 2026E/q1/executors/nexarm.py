@@ -13,7 +13,7 @@ from ..runtime_config import Q1RuntimeConfig
 
 
 SDK_RELATIVE_PATH = Path(
-    "docs/NexArm机械臂/1.教程资料/6. 外部主控二次开发/02 程序源码/UART_Control/nexarm_sdk.py"
+    "hardware/nexarm/jetson_to_nexarm/nexarm_sdk.py"
 )
 
 
@@ -53,12 +53,19 @@ class NexArmRobotExecutor:
 
     def move_to_observe_pose(self) -> None:
         values = self.config.observe_pose
-        # TaskSuite_E/system_task_handle.cpp::move_observe():
-        # 先到同一XY的Z=200（1500ms，等待1700ms），再下降到OBS_Z。
-        transit = RobotPose(values[0], values[1], 200.0, values[3], values[4], values[5], 1500)
-        self._move(transit)
-        time.sleep(1.7)
-        self._move(RobotPose(*values))
+        # 与复位 HOME 统一：单次直接到位拍照，不再使用 TaskSuite 的 Z=200 再下降路径。
+        duration_ms = int(self.config.move_duration_ms or values[6])
+        self._move(
+            RobotPose(
+                float(values[0]),
+                float(values[1]),
+                float(values[2]),
+                float(values[3]),
+                float(values[4]),
+                float(values[5]),
+                duration_ms,
+            )
+        )
 
     def wait_until_idle(self, timeout_s: float) -> bool:
         if self.client is None or self._last_pose is None:

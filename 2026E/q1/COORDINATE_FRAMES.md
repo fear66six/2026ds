@@ -161,11 +161,12 @@ roll = clamp(roll, wrist_roll_min_deg, wrist_roll_max_deg)
 | `magnet_settle_ms` | 吸合后等待 |
 | `release_peel_delta` | 释放侧移 `(dx, dy, dz)` |
 | `workspace_limits` | `x/y/z` 允许区间 |
-| `observe_pose` | 观察位 `[x,y,z,pitch,roll,claw,duration_ms]` |
+| `home_pose` | **唯一**观察/拍照位，与复位 HOME 统一：`[x,y,z,pitch,roll,claw]` 或再加 `duration_ms` |
+| `observe_pose` | 仅作 `home_pose` 同义别名；加载后写入运行时的 `observe_pose` 字段供 `move_to_observe_pose` 使用 |
 
 模板：`examples/safety_config.example.json`（数值待实机替换）。
 
-默认 `observe_pose` 来自历史 TaskSuite 观察位注释，**不等于当前安装已验证**。
+当前默认 HOME/观察候选为 `(173,4,226,-90,0,0)`，时长默认 6000 ms；XYZ 来自实测可达停止位，pitch 根据 A4 边框“下宽上窄”约 10% 的对称梯形调整到 -90°。复位测试 pitch 范围为 `[-95,-80]`，HOME 不贴边。历史不可达候选 `(150,0,300,-96)` 与 TaskSuite `(200,0,160,-90,0,-60)` 仅作参考。
 
 ## 6. 单步规划用的参考点
 

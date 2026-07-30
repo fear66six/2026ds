@@ -12,7 +12,7 @@ import numpy as np
 from .camera import frame_quality
 from .models import Snapshot
 
-_DRIVER = Path(__file__).resolve().parents[1] / "drivers" / "k230_ttl_camera" / "jetson"
+_DRIVER = Path(__file__).resolve().parents[1] / "hardware" / "k230_ttl_camera"
 if str(_DRIVER) not in sys.path:
     sys.path.insert(0, str(_DRIVER))
 

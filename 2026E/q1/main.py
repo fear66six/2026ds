@@ -49,6 +49,22 @@ def _apply_json_fields(config: Q1RuntimeConfig, data: dict, keys: tuple[str, ...
             setattr(config, key, data[key])
 
 
+def _normalize_home_observe_pose(data: dict, move_duration_ms: int | None) -> tuple | None:
+    """Prefer home_pose; observe_pose is accepted only as a HOME alias."""
+    raw = data.get("home_pose")
+    if raw is None:
+        raw = data.get("observe_pose")
+    if raw is None:
+        return None
+    values = [float(v) for v in raw]
+    if len(values) == 6:
+        duration = int(move_duration_ms if move_duration_ms is not None else 6000)
+        values.append(duration)
+    elif len(values) != 7:
+        raise ValueError("home_pose/observe_pose must have 6 or 7 numbers")
+    return tuple(values)
+
+
 def _load_run_parameters(config: Q1RuntimeConfig, args) -> None:
     safety_keys = (
         "safe_height",
@@ -58,13 +74,17 @@ def _load_run_parameters(config: Q1RuntimeConfig, args) -> None:
         "magnet_settle_ms",
         "release_peel_delta",
         "workspace_limits",
-        "observe_pose",
     )
+    payloads: list[dict] = []
     if args.safety_config is not None and args.safety_config.exists():
-        _apply_json_fields(config, json.loads(args.safety_config.read_text(encoding="utf-8")), safety_keys)
+        payloads.append(json.loads(args.safety_config.read_text(encoding="utf-8")))
     if args.arm_calibration is not None and args.arm_calibration.exists():
-        arm_data = json.loads(args.arm_calibration.read_text(encoding="utf-8"))
-        _apply_json_fields(config, arm_data, safety_keys)
+        payloads.append(json.loads(args.arm_calibration.read_text(encoding="utf-8")))
+    for data in payloads:
+        _apply_json_fields(config, data, safety_keys)
+        pose = _normalize_home_observe_pose(data, config.move_duration_ms)
+        if pose is not None:
+            config.observe_pose = pose
 
 
 def build_controller(args) -> Q1Controller:
@@ -109,7 +129,7 @@ def build_controller(args) -> Q1Controller:
             burst=config.capture_burst,
             settle_ms=config.settle_time_ms,
         )
-    robot = NexArmRobotExecutor(Path(__file__).resolve().parents[2], config)
+    robot = NexArmRobotExecutor(Path(__file__).resolve().parents[1], config)
     magnet = STM32MagnetController(config.magnet_port or "")
     return Q1Controller(camera=camera, analyzer=analyzer, robot=robot, magnet=magnet, mapper=mapper, config=config)
 

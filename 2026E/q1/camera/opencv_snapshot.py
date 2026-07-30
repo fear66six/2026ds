@@ -9,7 +9,7 @@ from typing import Callable
 import cv2
 import numpy as np
 
-from .models import Snapshot
+from ..models import Snapshot
 
 
 def frame_quality(frames: list[np.ndarray]) -> list[dict[str, float]]:

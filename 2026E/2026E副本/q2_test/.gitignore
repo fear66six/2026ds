@@ -1,0 +1,6 @@
+__pycache__/
+.pytest_cache/
+*.py[cod]
+solution.png
+demo_solution.png
+board_solution.gif

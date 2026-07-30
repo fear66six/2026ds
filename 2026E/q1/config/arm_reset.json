@@ -1,0 +1,25 @@
+{
+  "camera_port": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5B7A028646-if00",
+  "nexarm_port": null,
+  "home_pose": [173.0, 4.0, 226.0, -90.0, 0.0, 0.0],
+  "move_duration_ms": 6000,
+  "global_acceleration": 10,
+  "position_tolerance_mm": 7.0,
+  "orientation_tolerance_deg": 3.0,
+  "stable_samples": 3,
+  "motion_timeout_s": 12.0,
+  "capture_settle_s": 1.0,
+  "workspace_limits": {
+    "x": [150.0, 200.0],
+    "y": [-20.0, 20.0],
+    "z": [200.0, 250.0],
+    "pitch": [-95.0, -80.0],
+    "roll": [0.0, 0.0],
+    "claw": [0.0, 0.0]
+  },
+  "sources": {
+    "home_pose": "Reachable XYZ from 20260729_125749_401725 with user-approved pitch=-90 correction; workspace margins kept around home; requires perspective recheck",
+    "claw_override": "Jetson /home/jetson/Desktop/jetson_to_nexarm/arm_controller.py::CLAW_UNUSED",
+    "motion_policy": "Q1 mounted-camera reset test project decision; requires physical clearance confirmation"
+  }
+}
