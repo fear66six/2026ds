@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+import time
 from contextlib import contextmanager
 
 
@@ -22,6 +23,9 @@ class MagnetControllerAdapter:
     def emergency_off(self) -> None:
         raise NotImplementedError
 
+    def assert_healthy(self) -> None:
+        raise NotImplementedError
+
     def close(self) -> None:
         raise NotImplementedError
 
@@ -31,38 +35,13 @@ class MagnetControllerAdapter:
         try:
             yield self
         except BaseException:
-            self.emergency_off()
+            try:
+                self.emergency_off()
+            except BaseException:
+                pass
             raise
-        finally:
+        else:
             self.stop_hold()
-
-
-class SimulationMagnetController(MagnetControllerAdapter):
-    def __init__(self) -> None:
-        self.is_holding = False
-        self.events: list[str] = []
-
-    def initialize(self) -> None:
-        self.ensure_off()
-
-    def ensure_off(self) -> None:
-        self.is_holding = False
-        self.events.append("OFF")
-
-    def start_hold(self) -> None:
-        self.is_holding = True
-        self.events.append("HOLD_START")
-
-    def stop_hold(self) -> None:
-        self.is_holding = False
-        self.events.append("HOLD_STOP")
-
-    def emergency_off(self) -> None:
-        self.is_holding = False
-        self.events.append("EMERGENCY_OFF")
-
-    def close(self) -> None:
-        self.ensure_off()
 
 
 class STM32MagnetController(MagnetControllerAdapter):
@@ -77,6 +56,13 @@ class STM32MagnetController(MagnetControllerAdapter):
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._error: BaseException | None = None
+        self._io_lock = threading.Lock()
+        self.events: list[dict] = []
+
+    def _event(self, name: str, **details) -> None:
+        self.events.append(
+            {"event": name, "monotonic_s": time.monotonic(), **details}
+        )
 
     def initialize(self) -> None:
         from drivers.stm32_magnet_uart import (
@@ -92,22 +78,47 @@ class STM32MagnetController(MagnetControllerAdapter):
         self.lease_ms = lease
         self.renew_interval_ms = lease // 2
         self.client = STM32MagnetUART(SerialTransport(port=self.port))
-        self.client.open()
-        self.ensure_off()
+        try:
+            self.client.open()
+            with self._io_lock:
+                self.client.magnet_off()
+                if not self.client.ping():
+                    raise RuntimeError("STM32 magnet PING failed")
+                status = self.client.get_status()
+            if status.magnet or status.fault:
+                raise RuntimeError(f"unsafe STM32 magnet initial status: {status}")
+        except BaseException:
+            try:
+                self.client.emergency_off()
+            except BaseException:
+                pass
+            self.client.close()
+            self.client = None
+            raise
+        self.is_holding = False
+        self._event("INITIALIZED_OFF", port=self.port, status=str(status))
 
     def ensure_off(self) -> None:
         if self.client is not None:
-            self.client.magnet_off()
+            with self._io_lock:
+                self.client.magnet_off()
+                status = self.client.get_status()
+            if status.magnet or status.fault:
+                raise RuntimeError(f"STM32 magnet failed safe-off check: {status}")
         self.is_holding = False
+        self._event("OFF_CONFIRMED")
 
     def _renew(self) -> None:
         assert self.client is not None and self.lease_ms is not None and self.renew_interval_ms is not None
         try:
             while not self._stop.wait(self.renew_interval_ms / 1000.0):
-                self.client.magnet_on(self.lease_ms)
+                with self._io_lock:
+                    self.client.magnet_on(self.lease_ms)
+                self._event("LEASE_RENEWED", lease_ms=self.lease_ms)
         except BaseException as exc:
             self._error = exc
             self._stop.set()
+            self._event("LEASE_RENEW_FAILED", error=repr(exc))
 
     def start_hold(self) -> None:
         if self.client is None or self.lease_ms is None:
@@ -116,10 +127,29 @@ class STM32MagnetController(MagnetControllerAdapter):
             raise RuntimeError("电磁铁保持会话已启动")
         self._error = None
         self._stop.clear()
-        self.client.magnet_on(self.lease_ms)
+        try:
+            with self._io_lock:
+                self.client.magnet_on(self.lease_ms)
+                status = self.client.get_status()
+            if not status.magnet or status.fault:
+                raise RuntimeError(f"STM32 magnet did not enter safe ON state: {status}")
+        except BaseException:
+            try:
+                with self._io_lock:
+                    self.client.emergency_off()
+            except BaseException:
+                pass
+            raise
         self.is_holding = True
+        self._event("HOLD_START_CONFIRMED", lease_ms=self.lease_ms)
         self._thread = threading.Thread(target=self._renew, name="q1-magnet-renew", daemon=True)
         self._thread.start()
+
+    def assert_healthy(self) -> None:
+        if self._error is not None:
+            raise RuntimeError("电磁铁续租失败") from self._error
+        if not self.is_holding or self._thread is None or not self._thread.is_alive():
+            raise RuntimeError("电磁铁保持线程未运行")
 
     def stop_hold(self) -> None:
         self._stop.set()
@@ -128,18 +158,30 @@ class STM32MagnetController(MagnetControllerAdapter):
             self._thread = None
         try:
             if self.client is not None:
-                self.client.magnet_off()
+                with self._io_lock:
+                    self.client.magnet_off()
+                    status = self.client.get_status()
+                if status.magnet or status.fault:
+                    raise RuntimeError(f"STM32 magnet OFF verification failed: {status}")
         finally:
             self.is_holding = False
+        self._event("HOLD_STOP_CONFIRMED")
         if self._error is not None:
             error, self._error = self._error, None
             raise RuntimeError("电磁铁续租失败") from error
 
     def emergency_off(self) -> None:
         self._stop.set()
-        if self.client is not None:
-            self.client.emergency_off()
-        self.is_holding = False
+        if self._thread is not None:
+            self._thread.join(timeout=1.0)
+            self._thread = None
+        try:
+            if self.client is not None:
+                with self._io_lock:
+                    self.client.emergency_off()
+        finally:
+            self.is_holding = False
+            self._event("EMERGENCY_OFF_SENT")
 
     def close(self) -> None:
         try:

@@ -19,7 +19,7 @@ from typing import Any
 import cv2
 
 from q1.camera import K230SnapshotAdapter
-from q1.robot import NexArmResetController, Pose, pose_error
+from q1.robot import NexArmResetController, Pose, StaleFeedbackError, pose_error
 
 
 CONFIRM_TOKEN = "RUN_ARM_RESET"
@@ -48,11 +48,19 @@ def parse_args(argv=None):
         "--nexarm-port",
         help="override only when the current NexArm endpoint has been physically verified",
     )
+    parser.add_argument(
+        "--preserve-controller-acceleration",
+        action="store_true",
+        help=(
+            "diagnostic after a controller power cycle: do not send "
+            "CMD_SET_GLOBAL_ACC before the single HOME command"
+        ),
+    )
     return parser.parse_args(argv)
 
 
 def load_config(project_root: Path, requested: Path | None) -> dict[str, Any]:
-    path = requested or project_root / "q1" / "config" / "arm_reset.json"
+    path = requested or project_root / "q1" / "config" / "robot_config.json"
     data = json.loads(path.read_text(encoding="utf-8"))
     data["_path"] = str(path)
     return data
@@ -253,6 +261,9 @@ def main(argv=None) -> int:
         "motion_executed": False,
         "magnet_called": False,
         "full_q1_executed": False,
+        "controller_acceleration_preserved": bool(
+            args.preserve_controller_acceleration
+        ),
         "checks": {},
         "poses": [],
         "images": {},
@@ -264,10 +275,10 @@ def main(argv=None) -> int:
     arm: NexArmResetController | None = None
     motion_started = False
 
-    home = Pose.from_sequence(config["home_pose"])
+    home = Pose.from_sequence(config["home_pose"][:6])
     if "observe_pose" in config:
         raise RuntimeError(
-            "arm_reset.json must not define observe_pose; home_pose is the only reset/photo pose"
+            "robot_config.json must not define observe_pose; home_pose is the only reset/photo pose"
         )
     camera_port = str(config["camera_port"])
     nexarm_port, port_info = discover_nexarm_port(
@@ -312,6 +323,11 @@ def main(argv=None) -> int:
             {
                 "move_duration_ms": config["move_duration_ms"],
                 "global_acceleration": config["global_acceleration"],
+                "global_acceleration_command": (
+                    "PRESERVED_AFTER_POWER_CYCLE"
+                    if args.preserve_controller_acceleration
+                    else "SET_FROM_CONFIG"
+                ),
                 "acceleration_scale_note": "SDK command exists; numeric scale needs real-machine verification",
             },
         )
@@ -405,7 +421,13 @@ def main(argv=None) -> int:
             raise RuntimeError("internal preflight error: camera or arm is not open")
 
         logger.warning("RUN_ARM_RESET accepted; starting fixed low-speed sequence")
-        arm.configure_low_acceleration()
+        if args.preserve_controller_acceleration:
+            logger.warning(
+                "diagnostic mode: preserving controller acceleration; "
+                "CMD_SET_GLOBAL_ACC will not be sent"
+            )
+        else:
+            arm.configure_low_acceleration()
 
         report["last_target_pose"] = home.as_dict()
         motion_started = True
@@ -413,7 +435,7 @@ def main(argv=None) -> int:
         arm.send_pose(home)
         try:
             actual, error = arm.wait_until_idle(home)
-        except TimeoutError:
+        except (TimeoutError, StaleFeedbackError):
             # The command has already exceeded its hard timeout. Send no further
             # motion, but preserve a photo and structured feedback for pose tuning.
             try:
@@ -425,6 +447,16 @@ def main(argv=None) -> int:
                         "target": home.as_dict(),
                         "actual": actual.as_dict(),
                         "error": error.as_dict(),
+                        "arrival_result": arm.arrival_result,
+                        "max_observed_feedback_delta_mm": arm.max_observed_feedback_delta_mm,
+                        "max_observed_servo_delta": arm.max_observed_servo_delta,
+                        "command_start_pose": (
+                            None
+                            if arm.command_start_pose is None
+                            else arm.command_start_pose.as_dict()
+                        ),
+                        "feedback_samples": list(arm.feedback_samples),
+                        "last_feedback_meta": dict(arm.last_feedback_meta),
                     }
                 )
                 time.sleep(float(config.get("capture_settle_s", 1.0)))
@@ -444,6 +476,16 @@ def main(argv=None) -> int:
                 "target": home.as_dict(),
                 "actual": actual.as_dict(),
                 "error": error.as_dict(),
+                "arrival_result": arm.arrival_result,
+                "max_observed_feedback_delta_mm": arm.max_observed_feedback_delta_mm,
+                "max_observed_servo_delta": arm.max_observed_servo_delta,
+                "command_start_pose": (
+                    None
+                    if arm.command_start_pose is None
+                    else arm.command_start_pose.as_dict()
+                ),
+                "feedback_samples": list(arm.feedback_samples),
+                "last_feedback_meta": dict(arm.last_feedback_meta),
             }
         )
         time.sleep(float(config.get("capture_settle_s", 1.0)))

@@ -27,6 +27,15 @@ def choose_wrist_release_roll(
     roll_min_deg: float,
     roll_max_deg: float,
 ) -> WristRotationResult:
+    if not roll_min_deg <= pick_roll_deg <= roll_max_deg:
+        return WristRotationResult(
+            valid=False,
+            pick_roll_deg=float(pick_roll_deg),
+            release_roll_deg=None,
+            motion_deg=None,
+            candidate_angles=[],
+            rejection_reason="WRIST_PICK_ROLL_OUT_OF_RANGE",
+        )
     nominal = float(pick_roll_deg) + float(wrist_roll_sign) * float(rotation_delta_deg)
     candidates = [nominal, nominal + 360.0, nominal - 360.0]
     feasible: list[tuple[float, float]] = []

@@ -8,7 +8,7 @@ import cv2
 import numpy as np
 
 from ..models import ExecutionResult, SingleMovePlan
-from ..pieces import PIECE_TEMPLATES
+from ..pieces import PIECE_TEMPLATES, template_target_vertices_mm
 
 
 def _rotate_translate(vertices: np.ndarray, center: tuple[float, float], angle_deg: float) -> np.ndarray:
@@ -34,9 +34,14 @@ class SimulationWorld:
             angles = [17.0, -28.0, 42.0, -12.0]
             for index, template in enumerate(PIECE_TEMPLATES):
                 template_id = f"P{index + 1}"
+                source_shape_cm = (
+                    template_target_vertices_mm(index, (0.0, 0.0)) / 10.0
+                )
                 self.pieces[template_id] = {
                     "template_id": template_id,
-                    "vertices_mm": _rotate_translate(np.asarray(template.local_vertices), centers[index], angles[index]),
+                    "vertices_mm": _rotate_translate(
+                        source_shape_cm, centers[index], angles[index]
+                    ),
                     "angle_deg": angles[index],
                     "region": "UPPER_SOURCE",
                     "confidence": 0.98 - index * 0.03,
@@ -62,10 +67,7 @@ class SimulationWorld:
             self.release_failure_template = None
             return False, "SIMULATED_RELEASE_FAILURE"
         index = int(plan.template_id[1:]) - 1
-        template = PIECE_TEMPLATES[index]
-        target = template.world_vertices(
-            (self.target_origin_mm[0] / 10.0, self.target_origin_mm[1] / 10.0)
-        ) * 10.0
+        target = template_target_vertices_mm(index, self.target_origin_mm)
         if self.place_offset_template == plan.template_id:
             target = target + np.array([8.0, 0.0])
             self.place_offset_template = None
@@ -105,15 +107,10 @@ class SimulationRobotExecutor:
     def execute_single_move(self, plan: SingleMovePlan, magnet) -> ExecutionResult:
         self.executed_templates.append(plan.template_id)
         phases = [
-            "MOVE_ABOVE_SOURCE",
-            "MOVE_TO_PICK_HEIGHT",
+            "DIRECT_HOME_TO_PICK_POSE",
             "MAGNET_HOLD_START",
             "WAIT_MAGNET_SETTLE",
-            "LIFT_TO_SAFE_HEIGHT",
-            "TRANSFER",
-            "ROTATE",
-            "MOVE_ABOVE_TARGET",
-            "LOWER_TO_RELEASE_HEIGHT",
+            "DIRECT_PICK_TO_RELEASE_POSE",
         ]
         self.phase_log.extend(phases)
         with magnet.hold_session():
@@ -123,7 +120,7 @@ class SimulationRobotExecutor:
                 ok, reason = True, "DRY_RUN_NO_WORLD_MUTATION"
             else:
                 ok, reason = self.world.place(plan)
-        self.phase_log.extend(["MAGNET_HOLD_STOP", "RELEASE_PEEL", "LIFT"])
+        self.phase_log.append("MAGNET_HOLD_STOP")
         return ExecutionResult(ok, plan.template_id, reason, release_confirmed=ok)
 
     def execute_release_recovery(self, plan: SingleMovePlan, attempt: int) -> ExecutionResult:
@@ -136,4 +133,3 @@ class SimulationRobotExecutor:
 
     def close(self) -> None:
         self.initialized = False
-

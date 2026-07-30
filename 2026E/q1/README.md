@@ -19,26 +19,27 @@
 
 每轮：**HOME/观察位 → 抓拍 → 分析四片 → 审计 → 只选并搬 1 块 → 再回同一 HOME**。
 
-生产入口只走真实链路：
+生产入口只走一个带令牌的闭环：
 
 ```text
-SnapshotCamera → SceneAnalyzer → plan_single_move
-  → NexArmRobotExecutor + STM32MagnetController
+K230 TTL → SceneAnalyzer → audit/select/plan_single_move
+  → NexArmRobotExecutor + STM32MagnetController（生产唯一后端）
 ```
 
 命令（在 `2026E/` 下）：
 
-```powershell
-python -m q1.main `
-  --camera-index 1 `
-  --paper-calibration path\to\paper.json `
-  --arm-calibration path\to\arm.json `
-  --safety-config path\to\safety.json `
-  --nexarm-port COMx `
-  --magnet-port COMy
+```bash
+python3 -m q1.main \
+  --robot-config q1/config/robot_config.json \
+  --camera-backend k230_ttl \
+  --magnet-backend stm32 \
+  --max-cycles 4 \
+  --confirm RUN_Q1
 ```
 
-缺标定或缺安全参数时，`real_run_blockers()` 会直接拒绝启动，不会伪造默认坐标。
+A4 四角由每帧 `detect_paper` 自动检测。机械臂相关参数只允许放在
+`q1/config/robot_config.json`。缺令牌、缺配置或字段不完整时，
+`real_run_blockers()` 会拒绝启动。
 
 ## 证据类型约定
 

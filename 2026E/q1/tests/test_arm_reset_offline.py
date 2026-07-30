@@ -1,4 +1,5 @@
 from q1.robot.safe_nexarm import Pose, pose_error
+from q1.scripts.test_camera_arm_reset import parse_args
 
 
 def test_pose_error_exact():
@@ -13,3 +14,12 @@ def test_pose_error_xyz_and_orientation():
     assert error.position_mm == 5
     assert error.pitch_deg == 2
     assert error.roll_deg == 1
+
+
+def test_preserve_controller_acceleration_is_explicit_opt_in():
+    assert parse_args([]).preserve_controller_acceleration is False
+    assert (
+        parse_args(["--preserve-controller-acceleration"])
+        .preserve_controller_acceleration
+        is True
+    )

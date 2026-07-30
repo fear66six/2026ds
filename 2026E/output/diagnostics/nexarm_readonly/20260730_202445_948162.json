@@ -1,0 +1,33 @@
+{
+  "mode": "NEXARM_CONTROLLER_STATE_DIAG",
+  "created_at": "2026-07-30T20:24:45.948162+08:00",
+  "output_path": "D:\\diansai\\2026\\2026E\\output\\diagnostics\\nexarm_readonly\\20260730_202445_948162.json",
+  "config_path": "D:\\diansai\\2026\\2026E\\q1\\config\\robot_config.json",
+  "port": "/dev/serial/by-id/usb-1a86_USB_Serial-if00-port0",
+  "home_pose": [
+    173.0,
+    4.0,
+    226.0,
+    -84.4,
+    0.0,
+    0.0,
+    6000.0
+  ],
+  "hardware_opened": false,
+  "motion_command_sent": false,
+  "safety": {
+    "magnet_called": false,
+    "full_q1_executed": false,
+    "requires_read_token": "READ_NEXARM_STATE",
+    "requires_home_set_token": "SEND_HOME_READ_GOAL"
+  },
+  "status": "PLAN_ONLY_NO_HARDWARE",
+  "planned_checks": [
+    "firmware, battery, current coords",
+    "real joint angles, real TCP pose",
+    "IK result for configured HOME",
+    "position offsets, kinematics, board coordinate limits",
+    "ACTION_EDIT_STATUS and SYNC_TEACH_STATUS",
+    "best-effort direct servo register reads: mode, torque, goal/current position, voltage, temperature, moving status, current"
+  ]
+}

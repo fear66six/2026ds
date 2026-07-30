@@ -157,5 +157,117 @@
 - 替代方案：只用透视标定修正；继续修改 Z；物理调整相机支架。先测试小范围 pitch 修正，再决定是否需要支架调整。
 - 依据：运行 `20260729_125749_401725` 的 `home.jpg`、报告实际位姿与边框直线测量；用户 2026-07-30 批准。
 - 影响范围：复位测试与正式 Q1 统一观察位；不改变纸面透视标定的必要性。
-- 当前状态：配置已同步到 Jetson，待低速复测。
+- 当前状态：低速复测失败：发送 `(173,4,226,-90,0,0)` 后反馈持续为 `(183,3,220,-85.7,0,0)`，没有发生可确认运动；程序在 HOME 超时后未继续下降。该候选已由实测结果否决，统一 HOME 恢复为 D-015 的 `(173,4,226,-84.4,0,0)`。
 - 需要重新评估的条件：-90° 在当前 XYZ 不可达、梯形未改善或反向、线缆受拉，或相机光轴相对末端存在固定安装偏角。
+
+## D-017 Q1 采用三档令牌门禁与模拟磁铁完整轨迹
+
+- 决策：D-005 的“生产 CLI 不暴露模拟后端”由本决策更新。无 `--confirm` 时只允许 K230 拍照、分析和规划，绝不初始化 NexArm；`RUN_Q1_HOME` 只允许机械臂到统一 HOME 后拍照分析；仅 `RUN_Q1_ARM` 允许逐片抓放轨迹。电磁铁默认 `SimulationMagnetController`，该模式仍执行真实臂接近/下降/抬升/转运/释放轨迹，但只记录 HOLD/OFF 事件，报告固定为 `physical_pick_verified=false`。
+- 决策：队友 PC 流程的一次四片规划仅保留为 `four_piece_advisory.json`；生产执行继续每轮一片、回 HOME、视觉复核，不采用 MCU G-code 或四片开环批量执行。
+- 决策：生产执行器在任何位姿指令前必须完成固件版本和当前六维位姿握手，并下发已批准的低全局加速度 10；握手失败时不得发送运动。
+- 原因：当前任务需要在真臂上验证完整状态机轨迹，同时真电磁铁尚未接入；令牌分层防止分析命令意外运动，也避免把模拟磁铁结果误报为真实吸取成功。
+- 依据：用户 2026-07-30 明确批准；`2026E/q1/main.py::dispatch`；`controller.py`；`planning_advisory.py`；`executors/nexarm.py`。
+- 影响范围：Q1 CLI、运行报告、Jetson 同步和现场操作流程。
+- 当前状态：实现与离线回归通过；低高度真臂路径仍由 V-013 阻止直接视为已验证。
+- 需要重新评估的条件：真电磁铁完成硬件与安全验证，或低高度逐点标定改变当前安全路径。
+
+## D-018 Q1 改为单一正式闭环入口与单一机械臂配置
+
+- 决策：D-017 的三档入口由本决策覆盖。删除无确认分析、`RUN_Q1_HOME` 和 `RUN_Q1_ARM` 三种生产逻辑；唯一正式令牌为 `RUN_Q1`，缺少精确令牌时在打开硬件前拒绝启动。
+- 决策：正式闭环固定为 HOME → 拍照分析 → 审计 → 单片规划 → Z250 接近 → Z25 吸取 → 抬升/旋转/搬运 → Z25 释放 → 抬升 → HOME → 视觉复核。每轮只执行一片。
+- 决策：机械臂端口、HOME、纸面到机械臂矩阵、腕部、高度、速度/加速度、到位容差和工作区只保存在 `2026E/q1/config/robot_config.json`。位置到位容差按用户最新确认由 7 mm 改为 10 mm；姿态容差和工作区不扩大。
+- 依据：用户 2026-07-30 明确确认；`q1/main.py`、`controller.py`、`executors/nexarm.py`、`config/robot_config.json`。
+- 当前状态：本地实现完成，待离线回归和 Jetson 同步验证。
+
+## D-019 A4 四角仅由 detect_paper 实时检测
+
+- 决策：删除正式路径中的静态 `paper_calibration` JSON、`--paper-calibration` CLI 与 `PaperCalibration` 类。A4 四角像素只能由每帧 `vision.detect_paper` 从实图检测；检测失败则本轮场景无效。纸面到机械臂矩阵、腕部与高度仍来自 `robot_config.json`。
+- 原因：用户确认纸面边界不应提前人工点选，而应由实际图像判断。
+- 依据：用户 2026-07-30 明确要求；`q1/analyzer.py`、`q1/vision.py::detect_paper`、`q1/main.py`。
+- 影响范围：视觉入口、RealRun blockers；运行产物保存实时检测的 `paper_frame.json`，并按该帧四角生成仅用于审计的 `rectified.png`。
+- 当前状态：2026-07-30 使用实拍运行 `20260729_133130_779823`、`20260729_133425_944773` 离线回放确认横放 A4 左边界约为 `x=161`，四块均可分配为 P1–P4。已删除旧 K230 构图不适用的 18% 左裁边，并按纸面坐标审核横放时的左/右分区；后续仍需观察多轮角点抖动。
+- 需要重新评估的条件：自动检测在正式构图下反复失败或角点抖动导致规划误差过大。
+
+## D-020 运行目录必须在终端立即且重复输出
+
+- 决策：`RunRecorder` 创建目录后立即以稳定键名输出绝对 `Q1_RUN_ID`、`Q1_RUN_DIR` 和 `Q1_RUN_EVENTS`；失败、关闭和成功时重复输出对应目录，并在运行根维护 `LATEST_RUN.txt`。
+- 原因：MobaXterm 中间输出可能滚动或异常终止，用户需要快速定位本次日志，不能只依赖成功结束时的一行相对路径。
+- 依据：用户 2026-07-30 明确要求；`q1/controller.py::RunRecorder`、`q1/main.py::main`。
+- 影响范围：仅终端可观测性和最近运行指针，不改变视觉、规划或硬件动作。
+- 当前状态：已实现，待 Jetson 输出验证。
+
+## D-021 HOME 与安全高度上调 15 mm（已回退）
+
+- 决策：为改善相机拍全 A4 的构图，将统一 HOME/观察位由 `(173,4,226,-84.4,0,0)` 调为 `(173,4,241,-84.4,0,0)`，`safe_height` 由 Z250 调为 Z265，正式工作区 Z 上限由 260 调为 275 mm，继续保留 10 mm 软件余量。
+- 原因：用户现场反复出现 A4 边缘拍不全，导致 `detect_paper` 不稳定。
+- 依据：用户 2026-07-30 明确要求；`2026E/q1/config/robot_config.json`。
+- 影响范围：拍照 HOME、每次安全抬升/转运高度及 Z 工作区；不改变抓取/释放 Z25、XY 映射、pitch 或腕部参数。
+- 当前状态：实测目标 `(173,4,241,-84.4,0,0)` 最终反馈 `(168,5,219,-86.9,0,0)`，位置误差 22.58 mm，程序按门限停止且未发送恢复动作。用户随后批准回退，正式配置恢复 HOME Z226、safe Z250、工作区上限 Z260；A4 构图问题改由纸张位置或相机安装处理。
+
+## D-022 正式抓放改用完整六维目标，不再构造分轴航点
+
+- 决策：D-018/D-021 中的 Z250 安全高度以及“源 XY/Z226 后再下降”路径均由本决策覆盖。正式单片执行只发送两个完整目标：HOME 直接到源 `(x,y,25,pitch,pick_roll,claw)`，再直接到目标 `(x,y,25,pitch,release_roll,claw)`；不再构造原地抬升、源上方、竖直下降、转运高度、竖直释放或释放后抬升航点。`motion_mode=direct_pose` 是正式门禁条件。
+- 决策：任何已发送的 `set_pose(..., duration_ms)` 至少等待完整 `duration_ms` 后，才允许用连续稳定反馈宣布到位并发送下一位姿；不得因为旧反馈已落入10 mm容差而提前完成。
+- 原因：运行 `20260729_134450_208600`、`20260729_134517_829094` 均在第一条原地 Z250 命令超时；随后 `20260729_135642_047211`、`20260729_135719_628157` 又在源 XY/Z226 航点超时，各次约 47 个反馈样本始终保持 `(168,5,219,-86.9,0,0)`。用户指出当前机构不适合固定 XY 分轴升降，并要求使用厂商已封装的完整坐标运动。
+- 依据：上述四次运行的 `events.jsonl`、`failure.json`、`single_move_plan.json`；Hiwonder `UART_Control/nexarm_sdk.py::set_pose`（第296行，一条 `CMD_COORDINATE_SET` 同时编码六维目标与时长）；`UART_Control/basic_demo.py` 第58行；`q1/executors/nexarm.py`；用户 2026-07-30 现场确认。
+- 当前状态：本地实现与离线回放通过；直接到 Z25 的每个完整 XY/Z/Pitch/Roll 组合仍未实机验证，不能由 SDK 支持该命令外推为机构必然可达。
+
+## D-023 重复无运动后冻结 Z25 抓放并补齐规划残差门禁
+
+- 决策：运行 `20260729_141607_088180`、`20260729_141721_922896` 的两个源 Z25 完整目标在约 12 秒内均无任何可观察位移，因此 `direct_pick_release_pose_verified=false` 成为正式配置事实。Q1 仍可到 HOME、拍照、审计和保存规划，但在该字段经独立实机标定确认前不得发送抓放位姿。
+- 决策：`plan_single_move` 必须以 `vertex_max_error_mm=8.0` 检查刚体变换最大残差；超过门限直接报 `PLAN_GEOMETRY_RESIDUAL`，不得进入真实运动。首个一一匹配成功的 HOME 场景锁定本次运行的 A4 边界，后续检测只用于漂移审核，超过 `paper_corner_drift_limit_px` 时重新分析而不静默改坐标系。
+- 决策：运动尝试必须区分 `REACHED_WITH_FEEDBACK_CHANGE`、`ALREADY_IN_TOLERANCE_NO_FEEDBACK_CHANGE`、`NO_FEEDBACK_CHANGE_TIMEOUT`、`TIMEOUT_AFTER_FEEDBACK_CHANGE` 与 `STALE_FEEDBACK_HARDWARE_FAULT`（见 D-028）。处于 HOME 容差内但反馈未变化，不得再被报告为该命令已证明机械运动正常。
+- 原因：两次 P3 刚体拟合最大残差分别为 18.34 mm、18.06 mm，均明显超过 8 mm；旧规划仅检查非镜像解。两次 Z25 命令的反馈均固定为 `(168,5,219,-86.9,0,0)`，延长超时或放宽容差不能解决。
+- 依据：上述两次运行的 `failure.json`、`single_move_plan.json`、`selection.json`、`raw.png` 和 `overlay.png`；`q1/motion.py`、`q1/executors/nexarm.py`；Hiwonder UART `nexarm_sdk.py::set_pose`。Jetson SDK 与项目内厂商 SDK 的 `set_pose` 实现相同，仅 `serial` 导入位置不同。
+- 当前状态：本地测试、两次实拍离线回放及 Jetson 无运动检查通过；实际可达的装载相机/磁铁末端抓取位姿仍待独立标定。由 D-028 覆盖旧“运动观察”命名与独立标定入口。
+
+## D-024 自备纯色四片采用整图水平镜像目标
+
+- 决策：第1问当前自备纯色四片的目标布局设为 `TARGET_LAYOUT_MODE=mirror_x`。这是对完整 10×6 cm 目标拼图做一次水平镜像；每一块的规划仍必须满足 `det(R)>0`，禁止以单块反射冒充机械臂可执行运动。
+- 原因：运行 `20260729_143453_743075`、`20260729_143522_372571` 中四块实物相对题图模板均呈一致反面手性。旧目标下 P1/P2/P3/P4 最大刚体残差约为 `10/26/18/14 mm`；整图镜像后，第一组实拍的纯旋转残差降为 `4.25/4.37/2.26/0.76 mm`。两次实际被选中的 P3 分别降到 2.265 mm 和 2.394 mm。
+- 依据：`docs/E题_拼图装置.pdf` 第2页图2（厂商/赛题正式原图，B）；上述两次运行的 `raw.png`、`scene.json`（实机工程证据，D）；`q1/pieces.py::template_target_vertices_mm`、`q1/geometry.py::compute_rigid_transform`（源码，A）。
+- 适用边界：只适用于当前自备纯色四片和第1问“拼成目标矩形”。扑克牌花纹题或现场未知碎片不得沿用该镜像决定，必须根据正面花纹/现场目标重新建模。
+- 当前状态：离线回放和回归测试通过，已同步 Jetson；机械抓取位姿仍由 D-023 门禁独立阻止。
+
+## D-025 单目标可达性测试取消按 Z 逐级依赖（历史；入口已删除）
+
+- 决策（历史）：`source_z180` 至 `source_z25` 的每个完整位姿曾作为独立候选；到位区分 `REACHED_WITH_FEEDBACK_CHANGE`、`ALREADY_IN_TOLERANCE_NO_FEEDBACK_CHANGE`、`NO_FEEDBACK_CHANGE_TIMEOUT` 和 `TIMEOUT_AFTER_FEEDBACK_CHANGE`；反馈变化只描述遥测。
+- 原因：运行 `20260729_150141_324127` 向 `(246,35,180,-84.4,0,0)` 发送命令后反馈不变；HOME 运行 `20260729_150156_354380` 因起始误差 8.66 mm 被旧逻辑误标 `REACHED`。`TaskSuite_E` 历史低位目标说明笛卡尔可达性不随 Z 单调。
+- 依据：上述两个 Jetson `report.json`（A）；`TaskSuite_E` 相关源码（A）；当时的 `calibrate_single_pose` / `safe_nexarm`（已由 D-028 删除或收紧）。
+- 适用边界：运行 `20260729_153642_988359` 中用户看到运动但反馈停在 HOME，正式 `direct_pick_release_pose_verified` 不因测试门禁调整自动解除。
+- 当前状态：独立标定入口与配置块已删除；仅保留该 Z25 冲突证据目录。后续验证走 D-028 生产执行器路径。
+
+## D-026 真实电磁铁采用 STM32 限时租约并由显式后端启用
+
+- 决策：生产抓放时序为源位姿新鲜反馈确认 → `MAGNET_ON`/状态确认 → 释放位姿新鲜反馈确认 → `MAGNET_OFF`/状态确认。D-026 中曾将 `direct_pick_release_pose_verified` 置 true 的部分由 D-028 覆盖回 false。
+- 决策：端口、500 ms 租约、吸合/释放等待集中在 `q1/config/robot_config.json`。
+- 决策：续租、串口或状态异常立即阻止后续位姿，尽力 `EMERGENCY_OFF` 并关闭通信。
+- 依据：`firmware/stm32f103_uart_magnet/src/main.c`、`magnet_control.c`（A）；`drivers/stm32_magnet_uart.py`（A）；F-011 的应用通信实测（A）；STM32 by-id 路径来自用户（D）。
+- 适用边界：`STATUS MAGNET=1/0` 只证明 STM32 软件/PB12锁存状态，不证明线圈电流、磁力、吸住或物理释放。`physical_pick_verified` 在视觉确认真吸取前保持 `false`。
+
+## D-027 生产 Q1 取消模拟磁铁后端
+
+- 决策：D-017 与 D-026 中“生产入口允许或默认 sim”的部分由本决策覆盖。`q1.main` 只接受 `magnet_backend=stm32`，默认即为 `stm32`；传入 `sim` 在打开硬件前由参数解析拒绝。`SimulationMagnetController` 已从生产模块删除，Mock 仅保留在离线驱动测试中。
+- 决策：用两个不同字段避免误解：`physical_pick_enabled=true` 表示真实 STM32 上电路径已启用；`physical_pick_verified` 是运行证据状态。真实动作后的下一轮视觉审计仅在上一模板为 `PLACED_OK` 时将其更新为 true，并保存 `cycle_xx/physical_pick_verification.json`。
+- 原因：用户 2026-07-30 明确要求 Q1 全流程真实实现、不再保留任何生产信号仿真，同时要求真实到源上电、到目标断电。
+- 依据：用户明确决策（D）；`q1/main.py`、`q1/controller.py`、`q1/magnet.py` 和离线测试（A）。
+- 适用边界：启用真上电不等于预先证明吸取成功；在视觉证据产生前写 `physical_pick_verified=true` 会伪造实机结果，因此仍由运行闭环更新。
+
+## D-028 严格运动闭环：新鲜反馈门禁与硬故障
+
+- 决策：部署 SDK `nexarm_sdk.py` 增加 `flush_input_buffer`、请求/响应时间戳与丢弃字节诊断；`get_current_coords` 默认先清缓冲再请求。禁止把命令前积压的 `CMD_GET_CUR_COORDS` 帧当作本次查询结果。
+- 决策：正式执行器统一 `MotionAttempt`：记录 `COMMAND_SENT`、反馈元数据、样本、缓冲清理、时长与判定。大行程命令必须在完整 `duration_ms` 后出现可关联的新鲜反馈变化并稳定到位；否则 `STALE_FEEDBACK_HARDWARE_FAULT` / 超时硬故障，禁止下一位姿，磁铁保持关闭。
+- 决策：删除 `real_arm_motion` / 把遥测等同物理事实的字段；成功路径也只写 `physical_evidence=UNPROVEN`，直至视觉等独立证据。
+- 决策：删除 `q1.scripts.calibrate_single_pose`、`single_pose_calibration` 配置与对应单测；Jetson `q1_pose_calibration` 仅保留 `20260729_153642_988359`。
+- 决策：覆盖 D-026 中“用户确认后 `direct_pick_release_pose_verified=true`”。在 flush 后新鲜反馈闭环实机证明前保持 `false`。
+- 原因：F-022 已证明物理运动与陈旧遥测可并存；继续开环下一位姿或磁铁 ON 不可接受。
+- 依据：F-022 `report.json`（A+D）；`hardware/nexarm/jetson_to_nexarm/nexarm_sdk.py`、`q1/executors/nexarm.py`、`q1/controller.py`、`q1/config/robot_config.json`（A）。
+- 当前状态：本地实现与单测落地；Jetson 无运动诊断与复位路径对齐已完成。F-023 表明当前负载下名义 HOME 未进入容差；正式抓放门禁保持关闭，直至 HOME 再次可重复到位且 fresh-feedback 闭环通过。
+
+## D-029 将统一 HOME 调整为 (168,0,230,-88,1,1)
+
+- 决策：用户明确停止继续修复旧 HOME，将统一 HOME/观察位由 `(173,4,226,-84.4,0,0)` 改为 `(168,0,230,-88,1,1)`；动作时长保持 6000 ms。
+- 原因：用户希望提高观察位 Z，并将 Y 调到 0。旧 HOME 在断电重启、保留控制器加速度及确认软件/控制板限位均包含目标后，仍连续出现零坐标/舵机变化。相对稳定反馈 `(168,5,215,-88,1,1)` 约 ΔY=5 mm、ΔZ=15 mm，若执行链路仍不动作，将超过现有 10 mm 位置容差并继续超时。
+- 依据：Jetson 运行 `20260729_164647_578613`、`20260729_170513_284352`；只读真实关节/TCP 报告 `output/diagnostics/nexarm_readonly/20260729_170214.json`（A）；用户 2026-07-30 明确决策（D）。
+- 适用边界：这是项目回退，不证明旧 HOME 不可达，也不证明 AT32 到舵机的执行故障已经修复。`direct_pick_release_pose_verified` 与 `physical_pick_verified` 继续保持 `false`，不得据此解除抓放或电磁铁门禁。
+- 当前状态：已写入本地统一配置和运行时默认值并同步 Jetson；JSON、语法、SHA256 与本地 18 项离线测试通过，尚未重新执行实机 HOME。

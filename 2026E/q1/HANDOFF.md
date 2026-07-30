@@ -17,7 +17,7 @@
 |---|---|
 | `D:\diansai\2026\2026E\` | `/home/jetson/2026E/` |
 | `D:\diansai\2026\2026E\q1\` | `/home/jetson/2026E\q1\` |
-| `D:\diansai\2026\2026E\q1\config\arm_reset.json` | `/home/jetson/2026E/q1/config/arm_reset.json` |
+| `D:\diansai\2026\2026E\q1\config\robot_config.json` | `/home/jetson/2026E/q1/config/robot_config.json` |
 | `D:\diansai\2026\2026E\q1\scripts\test_camera_arm_reset.py` | `/home/jetson/2026E/q1/scripts/test_camera_arm_reset.py` |
 | `D:\diansai\2026\2026E\q1\robot\` | `/home/jetson/2026E/q1/robot/` |
 | `D:\diansai\2026\2026E\drivers\k230_ttl_camera\` | `/home/jetson/2026E/drivers/k230_ttl_camera/`（以及历史兼容路径，见下） |
@@ -72,7 +72,7 @@ D:\diansai\2026\2026E\hardware\nexarm\...
 
 ```bash
 # 在 Jetson 上
-python3 -m json.tool ~/2026E/q1/config/arm_reset.json
+python3 -m json.tool ~/2026E/q1/config/robot_config.json
 python3 -m py_compile ~/2026E/q1/scripts/test_camera_arm_reset.py
 ```
 
@@ -95,13 +95,18 @@ python3 -m q1.scripts.test_camera_arm_reset
 python3 -m q1.scripts.test_camera_arm_reset --confirm RUN_ARM_RESET
 ```
 
-当前 `arm_reset.json` 要点：
+当前 `robot_config.json` 要点：
 
-- 唯一位姿字段：`home_pose = [173, 4, 226, -90, 0, 0]`
+- 唯一位姿字段：`home_pose = [168, 0, 230, -88, 1, 1]`
 - **已删除**复位配置中的独立 `observe_pose`；正式 Q1 观察位也统一为同一 HOME（`runtime_config.observe_pose` / safety 的 `home_pose`）
-- `position_tolerance_mm = 7.0`
-- 软件范围（复位测试，HOME 不贴边）：`x [150,200]`，`y [-20,20]`，`z [200,250]`，`pitch [-95,-80]`；正式 safety 工作区仍由实机 JSON 填写
-- XYZ 已验证可达；A4 旋转 90° 后完整入画，pitch=-90 的梯形改善效果待复测
+- `position_tolerance_mm = 10.0`（用户在重复 HOME 实测后明确批准）
+- 正式工作区、纸面到机械臂矩阵、腕部、高度、速度/加速度和到位判定均只从该文件读取
+- 旧 HOME `[173,4,226,-84.4,0,0]` 在当前负载下重复停在 `[168,5,215,-88,1,1]`，且近邻重发无坐标/舵机变化。用户于 2026-07-30 选择 `[168,0,230,-88,1,1]` 作为 HOME；相对稳定反馈约 ΔY=5 mm、ΔZ=15 mm，若反馈不变将超过 10 mm 到位容差。这是项目目标调整，不代表 AT32 到舵机的执行故障已修复
+- 正式抓放使用 `motion_mode=direct_pose`：只发送完整源 Z25 和完整目标 Z25，不生成固定 XY 升降或固定 Z 横移航点
+- 运行 `20260729_153642_988359` 中操作者确认 Z25 方向发生了物理运动，但坐标/舵机反馈全程停在 HOME。正式配置因此保持 `direct_pick_release_pose_verified=false`；大行程命令后若新鲜反馈无变化，判为 `STALE_FEEDBACK_HARDWARE_FAULT` 并硬停，不得发送下一位姿或磁铁 ON
+- STM32 电磁铁固定端点、500 ms 租约及吸合/释放等待也集中在该文件；生产 Q1 已固定为 `stm32`，`sim` 参数会被拒绝
+- 刚体规划最大残差必须不超过 `vertex_max_error_mm=8.0`，否则以 `PLAN_GEOMETRY_RESIDUAL` 停止
+- 当前自备纯色四片与题图模板为一致反面手性；第1问目标由 `q1/config/puzzle_geometry.py` 的 `TARGET_LAYOUT_MODE=mirror_x` 做整图镜像。单块变换仍禁止反射；扑克牌/现场未知碎片不得复用
 - 正式抓放：`move_to_observe_pose` 已改为直接到 HOME，不再走 Z=200 下降路径
 - 到位超时时不再发送运动，但会保存 `captures/home_timeout.jpg` 供构图调参
 - 不要再把 HOME 直接设在 `workspace_limits` 边界上；软件范围必须比 HOME 略大
@@ -118,7 +123,13 @@ NexArm 稳定口（已实机出现过）：
 /dev/serial/by-id/usb-1a86_USB_Serial-if00-port0  → 通常 ttyUSB0
 ```
 
-不要把 K230 的 `ttyACM*` 当成机械臂口。
+STM32 电磁铁候选口（用户提供，运行前复核）：
+
+```text
+/dev/serial/by-id/usb-1a86_USB_Single_Serial_5B7A030191-if00
+```
+
+不要混用 K230、NexArm 和 STM32 三个串口。
 
 ## 4. AI 接手时优先打开的文件
 
@@ -126,7 +137,8 @@ NexArm 稳定口（已实机出现过）：
 |---|---|
 | 本交接 / 路径映射 | `2026E/q1/HANDOFF.md` |
 | Q1 调试总览 | `2026E/q1/README.md` |
-| 复位配置 | `2026E/q1/config/arm_reset.json` |
+| 唯一机械臂配置 | `2026E/q1/config/robot_config.json` |
+| STM32 电磁铁驱动 | `drivers/stm32_magnet_uart.py`、`2026E/q1/magnet.py` |
 | 复位脚本 | `2026E/q1/scripts/test_camera_arm_reset.py` |
 | 安全封装 | `2026E/q1/robot/safe_nexarm.py` |
 | 项目规则 | 仓库根 `AGENTS.md` |
@@ -153,3 +165,79 @@ python tools/search_docs.py "关键词"
 ## 6. 一句话提醒
 
 > **本地是编辑源，Jetson 是运行源。改了本地可执行逻辑，就同步 Jetson；查路径先看本文件。**
+
+## 7. Q1 唯一正式闭环入口（2026-07-30）
+
+旧的无确认分析、`RUN_Q1_HOME` 和 `RUN_Q1_ARM` 三档入口已删除。唯一令牌为
+`RUN_Q1`；缺少精确令牌时在打开任何硬件前拒绝启动。
+
+```bash
+cd /home/jetson/2026E
+python3 -m q1.main \
+  --robot-config q1/config/robot_config.json \
+  --camera-backend k230_ttl \
+  --magnet-backend stm32 \
+  --max-cycles 4 \
+  --confirm RUN_Q1
+```
+
+真实磁铁版本只在现场已确认供电、共地、MOSFET、续流保护和急停手段后使用：
+
+```bash
+python3 -m q1.main \
+  --robot-config q1/config/robot_config.json \
+  --camera-backend k230_ttl \
+  --magnet-backend stm32 \
+  --max-cycles 4 \
+  --confirm RUN_Q1
+```
+
+A4 四角像素由每帧 `detect_paper` 自动检测，不再使用 `paper_calibration.json`。
+
+当前 HOME/观察位为 `(173,4,226,-84.4,0,0)`。曾尝试提高 15 mm 改善 A4
+构图，但 Z241 实测未到位，现已回退。Z226 只表示 HOME 本身，不再作为转运高度。
+
+目标闭环为：HOME（新鲜反馈确认）→ 拍照分析 → 审计 → 选一片 → 规划 →
+一条完整 `set_pose` 从 HOME 插补到源 `(x,y,25,pitch,pick_roll,claw)` →
+**源点新鲜反馈确认后**磁铁 ON 并读 STM32 状态 → 一条完整 `set_pose` 插补到目标
+`(x,y,25,pitch,release_roll,claw)` → **目标新鲜反馈确认后**磁铁 OFF 并确认 →
+回 HOME → 视觉复核 → 下一片。执行器不再发送分轴航点。陈旧/无法关联到本次
+命令的反馈、到位超时或磁铁状态异常一律 `HARDWARE_FAULT`：磁铁安全关闭，
+不发送恢复或后续位姿。遥测变化只记为 `FEEDBACK_CONFIRMED` /
+`physical_evidence=UNPROVEN`，不得写成“已证明物理运动”。
+
+当前配置为 `direct_pick_release_pose_verified=false`，在 flush 后的新鲜反馈
+闭环于实机证明前，规划会保存但不会发送抓放位姿。生产 Q1 固定使用 STM32；
+不写 `--magnet-backend` 时默认也是 `stm32`，传入 `sim` 会直接拒绝。STM32
+使用 500 ms 看门狗租约，搬运期间每 250 ms 续租；续租失败、串口异常或状态
+异常会停止后续位姿并尽力紧急断电。`physical_pick_enabled=true` 表示真实通电
+路径已启用；首次动作后的下一轮视觉审计若将上一块判为 `PLACED_OK`，本次运行的
+`physical_pick_verified` 才更新为 true，并写入 `physical_pick_verification.json`。
+
+每条位姿命令写入独立 `motion_attempts`（目标、起始反馈、原始响应元数据、
+样本、缓冲清理、时长、新鲜度判定、磁铁事件），成功与失败均落在
+`output/runs/q1/<run_id>/` 的 `execution_result.json` / `events.jsonl` /
+`failure.json`。
+
+运行目录创建后会立即在终端打印：
+
+```text
+Q1_RUN_ID=<时间戳>
+Q1_RUN_DIR=/home/jetson/2026E/output/runs/q1/<时间戳>
+Q1_RUN_EVENTS=.../events.jsonl
+```
+
+失败和退出时还会重复打印 `Q1_FAILED_RUN_DIR` / `Q1_LAST_RUN_DIR`。
+最近一次目录始终写在 `output/runs/q1/LATEST_RUN.txt`，可执行：
+
+```bash
+cd "$(cat output/runs/q1/LATEST_RUN.txt)"
+```
+
+## 已废弃：独立单目标标定入口
+
+`q1.scripts.calibrate_single_pose` 与 `single_pose_calibration` 配置块已删除。
+保留的原始冲突证据仅为 Jetson
+`output/runs/q1_pose_calibration/20260729_153642_988359/report.json`
+（物理运动与陈旧 HOME 反馈并存）。正式闭环验证只走生产 Q1 执行器路径，
+且须先完成无运动缓冲诊断，再经现场单独确认后做受控位姿闭环。

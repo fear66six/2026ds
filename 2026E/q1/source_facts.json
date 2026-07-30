@@ -1,15 +1,15 @@
 {
   "observe_pose": {
-    "value": [173.0, 4.0, 226.0, -90.0, 0.0, 0.0, 6000],
-    "source": "Reachable XYZ from Jetson run 20260729_125749_401725 with user-approved pitch=-90 perspective correction",
+    "value": [168.0, 0.0, 230.0, -88.0, 1.0, 1.0, 6000],
+    "source": "User selected project HOME [168,0,230,-88,1,1] after Jetson runs 20260729_164647_578613 and 20260729_170513_284352 repeatedly reported stationary pose [168,5,215,-88,1,1] while the former HOME command produced no coordinate or servo change",
     "implementation": "q1/executors/nexarm.py::move_to_observe_pose (direct single move)",
-    "behavior": "正式抓放回观察位与复位 HOME 为同一点；保留已验证可达 XYZ，将 pitch 从 -84.4 调到 -90 以减小上下对称梯形；pitch 安全范围保留余量；claw=0；位置容差仍为 7 mm",
+    "behavior": "正式抓放回观察位与复位 HOME 为同一点；当前 HOME 仅用于接受机械臂已经稳定停留的反馈盆，不证明执行链路已恢复；A4 边界由 detect_paper 实时检测；正式抓放门禁仍关闭",
     "historical_tasksuite": {
       "value": [200.0, 0.0, 160.0, -90.0, 0.0, -60.0, 1500],
       "source": "TaskSuite_E/board_roi_config.h + system_task_handle.cpp::move_observe",
       "note": "历史参考，已由项目决策覆盖"
     },
-    "confidence": "D"
+    "confidence": "A+D"
   },
   "nexarm_uart": {
     "source": "docs/NexArm机械臂/1.教程资料/6. 外部主控二次开发/02 程序源码/UART_Control/nexarm_sdk.py",

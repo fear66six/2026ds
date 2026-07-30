@@ -15,6 +15,11 @@ assert TARGET_WIDTH_MM == TARGET_WIDTH_CM * 10.0
 assert TARGET_HEIGHT_MM == TARGET_HEIGHT_CM * 10.0
 assert TARGET_AREA_MM2 == TARGET_WIDTH_MM * TARGET_HEIGHT_MM
 
+# 当前自备纯色四片实拍与题图模板呈一致的镜像手性。Q1 只要求拼成目标矩形，
+# 因此对整套目标布局做一次水平镜像；单块运动仍严格禁止反射，只允许平移+旋转。
+# 扑克牌图案题不得沿用此决定，必须按花纹正面重新建立目标。
+TARGET_LAYOUT_MODE = "mirror_x"
+
 # 全局模板分配
 MAX_GLOBAL_ASSIGNMENT_COST = 45.0
 MIN_ASSIGNMENT_MARGIN = 0.35
@@ -76,7 +81,9 @@ MAT_ASPECT_TOL = 0.22        # 允许 A4 竖向/横向两种像素比例
 
 # 运行
 CAMERA_INDEX = 0
-CAMERA_CROP_LEFT_FRAC = 0.18  # 实拍时裁掉画面左侧（笔记本等干扰）
+# K230 的正式 1280x720 构图中，横放 A4 左边界约在 x=160。
+# 旧的 18% 裁边会把 x<230 清零，导致左侧碎片和纸框一起被截断。
+CAMERA_CROP_LEFT_FRAC = 0.0
 CAMERA_WIDTH = 848            # 摄像头采集宽度（降低可减轻卡顿）
 CAMERA_HEIGHT = 480
 DISPLAY_SCALE = 0.65

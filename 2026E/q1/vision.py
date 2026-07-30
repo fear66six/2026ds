@@ -432,6 +432,11 @@ def _contour_to_cm(contour: np.ndarray, paper: PaperFrame) -> np.ndarray:
 
 def detect_divider_line(frame: np.ndarray, paper: PaperFrame) -> Optional[float]:
     """检测水平分界线，返回 y 坐标 (cm)"""
+    if paper.landscape_in_image:
+        # 标准纸面 y 轴在横放图像中沿图像 x 轴，物理分界线是竖线。
+        # _detect_divider_bright 只检测图像水平线，曾把碎片边缘误判成
+        # y≈0，进而将左侧全部源碎片标记为 LOWER_TARGET。
+        return config.DIVIDER_Y_CM
     return _detect_divider_bright(frame, paper)
 
 
@@ -783,28 +788,32 @@ def _contour_to_piece(
     divider_y_cm: float,
     frame_shape: Tuple[int, ...],
 ) -> Optional[DetectedPiece]:
-    area_px = cv2.contourArea(cnt)
+    # 题目中的四块模板均为凸多边形。反光或黑色细缝会在白色 mask 边缘
+    # 形成小缺口，直接 approxPolyDP 会把一块四边形错误地变成 6~8 边形。
+    # 用凸包恢复实体外轮廓，同时保留越界/ROI 检查，不能借此接受纸面外目标。
+    geometry_cnt = cv2.convexHull(cnt)
+    area_px = cv2.contourArea(geometry_cnt)
     if area_px < 200:
         return None
     area_cm2 = area_px / (paper.px_per_cm ** 2)
     if area_cm2 < config.MIN_PIECE_AREA_CM2 or area_cm2 > config.MAX_PIECE_AREA_SOFT_CM2:
         return None
 
-    rect = cv2.minAreaRect(cnt)
+    rect = cv2.minAreaRect(geometry_cnt)
     (cx_px, cy_px), (_w_px, _h_px), angle = rect
     center_cm = _px_to_cm(np.array([cx_px, cy_px]), paper)
 
-    peri = cv2.arcLength(cnt, True)
-    approx = cv2.approxPolyDP(cnt, 0.02 * peri, True)
+    peri = cv2.arcLength(geometry_cnt, True)
+    approx = cv2.approxPolyDP(geometry_cnt, 0.02 * peri, True)
     if len(approx) < 3:
-        approx = cv2.approxPolyDP(cnt, 0.03 * peri, True)
+        approx = cv2.approxPolyDP(geometry_cnt, 0.03 * peri, True)
     if len(approx) >= 3:
         vertices_cm = _contour_to_cm(approx, paper)
     else:
-        contour_cm = _contour_to_cm(cnt, paper)
+        contour_cm = _contour_to_cm(geometry_cnt, paper)
         vertices_cm = resample_polygon(contour_cm, 32)
 
-    x, y, bw, bh = cv2.boundingRect(cnt)
+    x, y, bw, bh = cv2.boundingRect(geometry_cnt)
     tl = _px_to_cm(np.array([x, y]), paper)
     br = _px_to_cm(np.array([x + bw, y + bh]), paper)
     bbox_cm = (tl[0], tl[1], br[0] - tl[0], br[1] - tl[1])
@@ -815,7 +824,7 @@ def _contour_to_piece(
         return None
 
     return DetectedPiece(
-        contour=cnt,
+        contour=geometry_cnt,
         center_cm=center_cm,
         angle_deg=float(angle),
         area_cm2=float(area_cm2),
@@ -994,6 +1003,30 @@ def draw_overlay(
 
 def cm_to_px(pt_cm: Tuple[float, float], paper: PaperFrame) -> Tuple[float, float]:
     return _cm_to_px(pt_cm, paper)
+
+
+def rectify_paper(
+    frame: np.ndarray,
+    paper: PaperFrame,
+    output_size: tuple[int, int] = (840, 1188),
+) -> np.ndarray:
+    """按标准 A4 坐标矫正为竖向图，横放实物会在这里旋转到统一方向。"""
+    width, height = output_size
+    source = np.asarray(
+        [
+            _cm_to_px((0.0, 0.0), paper),
+            _cm_to_px((config.A4_WIDTH_CM, 0.0), paper),
+            _cm_to_px((config.A4_WIDTH_CM, config.A4_HEIGHT_CM), paper),
+            _cm_to_px((0.0, config.A4_HEIGHT_CM), paper),
+        ],
+        dtype=np.float32,
+    )
+    destination = np.asarray(
+        [[0, 0], [width - 1, 0], [width - 1, height - 1], [0, height - 1]],
+        dtype=np.float32,
+    )
+    matrix = cv2.getPerspectiveTransform(source, destination)
+    return cv2.warpPerspective(frame, matrix, (width, height))
 
 
 def _cm_to_px(pt_cm: Tuple[float, float], paper: PaperFrame) -> Tuple[float, float]:

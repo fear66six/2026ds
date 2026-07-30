@@ -1,4 +1,4 @@
-"""只含 Q1 闭环运行配置；未知实机参数保持为空。"""
+"""Q1 runtime configuration loaded from one robot configuration file."""
 
 from __future__ import annotations
 
@@ -8,79 +8,127 @@ from pathlib import Path
 
 @dataclass
 class Q1RuntimeConfig:
-    mode: str = "simulate"
+    mode: str = "full_q1"
+    authorization: str = "RUN_Q1"
     camera_index: int = 0
     capture_burst: int = 8
     settle_time_ms: int = 200
     max_visual_retries: int = 2
     max_release_retries: int = 2
-    max_cycles: int = 16
+    max_cycles: int = 4
     place_center_tolerance_mm: float = 5.0
     place_angle_tolerance_deg: float = 5.0
     vertex_max_error_mm: float = 8.0
     remaining_move_tolerance_mm: float = 3.0
     remaining_rotate_tolerance_deg: float = 3.0
     target_origin_mm: tuple[float, float] = (55.0, 168.5)
-    paper_calibration: Path | None = None
-    arm_calibration: Path | None = None
-    run_root: Path = Path("runs/q1")
+    paper_corner_drift_limit_px: float = 25.0
+    robot_config: Path | None = None
+    run_root: Path = Path("output/runs/q1")
     nexarm_port: str | None = None
+    magnet_backend: str = "stm32"
     magnet_port: str | None = None
+    magnet_lease_ms: int | None = None
 
-    # 正式抓放观察位与复位 HOME 统一：拍照/回观察都用同一点。
-    # 数值与 q1/config/arm_reset.json::home_pose 对齐；claw=0（相机安装，不用夹爪）。
-    # 字段名仍为 observe_pose，供 controller.move_to_observe_pose 使用。
     observe_pose: tuple[float, float, float, float, float, float, int] = (
-        173.0,
-        4.0,
-        226.0,
-        -90.0,
+        168.0,
         0.0,
-        0.0,
+        230.0,
+        -88.0,
+        1.0,
+        1.0,
         6000,
     )
-
-    # 下列实机安全参数没有可直接复用的视觉到机械臂标定，禁止伪造默认值。
-    safe_height: float | None = None
+    motion_mode: str = "direct_pose"
+    direct_pick_release_pose_verified: bool = False
     pick_height: float | None = None
     release_height: float | None = None
     move_duration_ms: int | None = None
+    global_acceleration: int | None = None
     magnet_settle_ms: int | None = None
-    release_peel_delta: tuple[float, float, float] | None = None
+    magnet_release_settle_ms: int | None = None
     workspace_limits: dict[str, tuple[float, float]] | None = None
+
+    position_tolerance_mm: float = 10.0
+    orientation_tolerance_deg: float = 3.0
+    idle_stable_samples: int = 3
+    motion_timeout_s: float = 12.0
+    physical_pick_enabled: bool = True
+    physical_pick_verified: bool = False
+    motion_calibration_status: str = (
+        "UNVERIFIED: direct HOME-to-pick and pick-to-release six-axis targets at "
+        "Z=25, including every XY/Z/Pitch/Roll combination, have not been validated; "
+        "separate Z=250 and source-XY/Z=226 waypoints were rejected"
+    )
+
+    def report_metadata(self) -> dict:
+        return {
+            "authorization": self.authorization,
+            "magnet_backend": self.magnet_backend,
+            "magnet_port": self.magnet_port,
+            "magnet_lease_ms": self.magnet_lease_ms,
+            "physical_pick_enabled": self.physical_pick_enabled,
+            "physical_pick_verified": self.physical_pick_verified,
+            "direct_pick_release_pose_verified": self.direct_pick_release_pose_verified,
+            "motion_calibration_status": self.motion_calibration_status,
+        }
 
     def real_run_blockers(self) -> list[str]:
         blockers: list[str] = []
-        if self.arm_calibration is None or not self.arm_calibration.exists():
-            blockers.append("CALIBRATION_REQUIRED: 缺少A4到机械臂坐标标定")
-        if self.paper_calibration is None or not self.paper_calibration.exists():
-            blockers.append("CALIBRATION_REQUIRED: 缺少A4四角标定")
-        if self.arm_calibration is not None and self.arm_calibration.exists():
+        if self.robot_config is None or not self.robot_config.exists():
+            blockers.append("ROBOT_CONFIG_REQUIRED")
+
+        if self.robot_config is not None and self.robot_config.exists():
             mapper = None
             try:
                 from .calibration import ArmCoordinateMapper
 
-                mapper = ArmCoordinateMapper(self.arm_calibration)
-            except ValueError as exc:
-                blockers.append(f"CALIBRATION_REQUIRED: 机械臂标定无效 ({exc})")
+                mapper = ArmCoordinateMapper(self.robot_config)
+            except (OSError, ValueError) as exc:
+                blockers.append(f"ROBOT_CONFIG_INVALID: {exc}")
             if mapper is not None and not mapper.wrist_mapping_ready():
-                blockers.append("CALIBRATION_REQUIRED: 缺少腕部 roll 零位/方向/范围标定")
+                blockers.append("CALIBRATION_REQUIRED: 腕部 roll mapping incomplete")
+
         if not self.nexarm_port:
-            blockers.append("缺少NexArm端口")
-        if not self.magnet_port:
-            blockers.append("缺少STM32电磁铁端口")
-        if self.safe_height is None:
-            blockers.append("缺少安全高度")
-        if self.pick_height is None:
-            blockers.append("缺少抓取高度")
-        if self.release_height is None:
-            blockers.append("缺少释放高度")
-        if self.move_duration_ms is None:
-            blockers.append("缺少单步动作持续时间")
-        if self.magnet_settle_ms is None:
-            blockers.append("缺少电磁铁吸合稳定时间")
-        if self.release_peel_delta is None:
-            blockers.append("缺少释放侧移方向与距离")
-        if not self.workspace_limits:
-            blockers.append("缺少机械臂工作区边界")
+            blockers.append("NEXARM_PORT_REQUIRED")
+        if self.magnet_backend != "stm32":
+            blockers.append(
+                f"REAL_STM32_MAGNET_REQUIRED: got {self.magnet_backend}"
+            )
+        if not self.physical_pick_enabled:
+            blockers.append("PHYSICAL_PICK_DISABLED")
+        if self.magnet_backend == "stm32" and not self.magnet_port:
+            blockers.append("MAGNET_PORT_REQUIRED: stm32 backend selected")
+        if self.magnet_backend == "stm32" and self.magnet_port:
+            if "/dev/serial/by-id/" not in self.magnet_port:
+                blockers.append("MAGNET_BY_ID_PORT_REQUIRED")
+            if self.magnet_port == self.nexarm_port:
+                blockers.append("MAGNET_PORT_CONFLICTS_WITH_NEXARM")
+            if self.magnet_lease_ms is None:
+                blockers.append("MAGNET_LEASE_REQUIRED")
+            elif not 50 <= int(self.magnet_lease_ms) <= 500:
+                blockers.append("MAGNET_LEASE_OUT_OF_PROTOCOL_RANGE")
+        if self.motion_mode != "direct_pose":
+            blockers.append(
+                f"INVALID_MOTION_MODE: expected direct_pose, got {self.motion_mode}"
+            )
+
+        required = {
+            "pick_height": self.pick_height,
+            "release_height": self.release_height,
+            "move_duration_ms": self.move_duration_ms,
+            "global_acceleration": self.global_acceleration,
+            "magnet_settle_ms": self.magnet_settle_ms,
+            "magnet_release_settle_ms": self.magnet_release_settle_ms,
+            "workspace_limits": self.workspace_limits,
+            "position_tolerance_mm": self.position_tolerance_mm,
+            "orientation_tolerance_deg": self.orientation_tolerance_deg,
+            "idle_stable_samples": self.idle_stable_samples,
+            "motion_timeout_s": self.motion_timeout_s,
+            "vertex_max_error_mm": self.vertex_max_error_mm,
+            "paper_corner_drift_limit_px": self.paper_corner_drift_limit_px,
+        }
+        for name, value in required.items():
+            if value is None or (name == "workspace_limits" and not value):
+                blockers.append(f"ROBOT_CONFIG_REQUIRED: missing {name}")
         return blockers

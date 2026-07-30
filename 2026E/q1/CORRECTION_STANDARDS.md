@@ -100,7 +100,7 @@ rigid_placement_transform(当前轮廓, 图2目标顶点)
 4. **标定腕部 roll**  
    小角度验证 `wrist_roll_sign` / zero（V-009）  
 5. **填 safety JSON**  
-   高度、工作区、`magnet_settle_ms`、`release_peel_delta`  
+高度、工作区、`magnet_settle_ms`
 6. **单片闭环**  
    只允许搬 1～2 片，查 `audit.json` 三项误差  
 7. **再调容差**  
@@ -112,7 +112,7 @@ rigid_placement_transform(当前轮廓, 图2目标顶点)
 |---|---|---|
 | 每轮都 `scene_valid` 失败 | 光照/阈值/纸面标定 | 重拍标定，查 `warnings` |
 | 总判 `PLACED_OFFSET` 但肉眼已拼好 | 目标原点偏了或角度定义 | 查 overlay 目标框；核对刚性角 |
-| 搬走后审计说释放失败 | 电磁铁/高度/侧移 | 查 `magnet` 与 `release_peel_delta`；勿先改模板 |
+| 搬走后审计说释放失败 | 电磁铁/高度/目标位姿 | 查 `magnet` 与完整释放位姿；勿先改模板 |
 | 放偏方向固定 | `paper_to_robot_matrix` 或轴向反了 | 重标矩阵，勿改图 2 顶点凑数 |
 | 旋转方向反了 | `wrist_roll_sign` | 改为 `-1` 或重测零位 |
 | 超过 `max_cycles` | 容太严或识别抖动 | 查 cycle 目录误差曲线再放宽容差 |

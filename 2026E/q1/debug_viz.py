@@ -9,6 +9,7 @@ import numpy as np
 
 from .models import SceneAnalysis, SingleMovePlan
 from .puzzle_solver import TemplateAssignmentResult
+from .vision import cm_to_px
 
 
 def save_debug_overlays(
@@ -19,6 +20,7 @@ def save_debug_overlays(
     assignment: TemplateAssignmentResult | None = None,
     plan: SingleMovePlan | None = None,
     selection: dict | None = None,
+    paper=None,
 ) -> None:
     cycle_dir.mkdir(parents=True, exist_ok=True)
     base = rectified.copy() if rectified is not None else np.full((400, 400, 3), 32, dtype=np.uint8)
@@ -29,7 +31,14 @@ def save_debug_overlays(
         cnt = np.asarray(piece.contour_px, dtype=np.int32).reshape(-1, 1, 2)
         cv2.drawContours(edges, [cnt], -1, (80, 80, 80), 1)
         if piece.rough_vertices_mm is not None:
-            rough = np.rint(np.asarray(piece.rough_vertices_mm) * 4.0).astype(np.int32)
+            rough_mm = np.asarray(piece.rough_vertices_mm, dtype=np.float64)
+            rough = (
+                np.rint(
+                    [cm_to_px(tuple(point / 10.0), paper) for point in rough_mm]
+                ).astype(np.int32)
+                if paper is not None
+                else np.rint(rough_mm * 4.0).astype(np.int32)
+            )
             for i, p in enumerate(rough):
                 cv2.circle(edges, tuple(p), 4, (0, 165, 255), -1)
                 cv2.putText(edges, f"r{i}", tuple(p + 4), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 165, 255), 1)
@@ -74,17 +83,25 @@ def save_debug_overlays(
     # rigid_transform
     rigid = base.copy()
     if plan is not None and plan.rigid_transform is not None:
-        src = np.rint(np.asarray(plan.source_vertices_mm) * 4.0).astype(np.int32)
-        tgt = np.rint(np.asarray(plan.target_vertices_mm) * 4.0).astype(np.int32)
-        xf = np.rint(np.asarray(plan.rigid_transform.transformed_vertices_mm) * 4.0).astype(np.int32)
+        def points_to_px(points_mm) -> np.ndarray:
+            points = np.asarray(points_mm, dtype=np.float64)
+            if paper is None:
+                return np.rint(points * 4.0).astype(np.int32)
+            return np.rint(
+                [cm_to_px(tuple(point / 10.0), paper) for point in points]
+            ).astype(np.int32)
+
+        src = points_to_px(plan.source_vertices_mm)
+        tgt = points_to_px(plan.target_vertices_mm)
+        xf = points_to_px(plan.rigid_transform.transformed_vertices_mm)
         cv2.polylines(rigid, [src.reshape(-1, 1, 2)], True, (255, 128, 0), 2)
         cv2.polylines(rigid, [tgt.reshape(-1, 1, 2)], True, (0, 255, 0), 2)
         cv2.polylines(rigid, [xf.reshape(-1, 1, 2)], True, (0, 255, 255), 1)
         if plan.pick_point_source_mm is not None:
-            p = tuple(np.rint(plan.pick_point_source_mm * 4.0).astype(int))
+            p = tuple(points_to_px([plan.pick_point_source_mm])[0])
             cv2.circle(rigid, p, 6, (0, 0, 255), -1)
         if plan.release_point_target_mm is not None:
-            r = tuple(np.rint(plan.release_point_target_mm * 4.0).astype(int))
+            r = tuple(points_to_px([plan.release_point_target_mm])[0])
             cv2.circle(rigid, r, 6, (255, 0, 255), -1)
         cv2.putText(
             rigid,
@@ -100,8 +117,20 @@ def save_debug_overlays(
     # selection_geometry
     sel = base.copy()
     if plan is not None and plan.pick_point_source_mm is not None and plan.release_point_target_mm is not None:
-        a = tuple(np.rint(plan.pick_point_source_mm * 4.0).astype(int))
-        b = tuple(np.rint(plan.release_point_target_mm * 4.0).astype(int))
+        if paper is None:
+            a = tuple(np.rint(plan.pick_point_source_mm * 4.0).astype(int))
+            b = tuple(np.rint(plan.release_point_target_mm * 4.0).astype(int))
+        else:
+            a = tuple(
+                np.rint(
+                    cm_to_px(tuple(np.asarray(plan.pick_point_source_mm) / 10.0), paper)
+                ).astype(int)
+            )
+            b = tuple(
+                np.rint(
+                    cm_to_px(tuple(np.asarray(plan.release_point_target_mm) / 10.0), paper)
+                ).astype(int)
+            )
         cv2.line(sel, a, b, (0, 255, 255), 2)
         cv2.circle(sel, a, int(8 * 4 / 4), (0, 128, 255), 1)
     if selection is not None:

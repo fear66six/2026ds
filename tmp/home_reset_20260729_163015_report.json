@@ -1,0 +1,258 @@
+{
+  "run_id": "20260729_163015_521142",
+  "project_root": "/home/jetson/2026E",
+  "run_dir": "/home/jetson/2026E/output/runs/20260729_163015_521142",
+  "config": {
+    "schema_version": 1,
+    "nexarm_port": "/dev/serial/by-id/usb-1a86_USB_Serial-if00-port0",
+    "camera_port": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5B7A028646-if00",
+    "magnet_port": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5B7A030191-if00",
+    "magnet_backend": "stm32",
+    "home_pose": [
+      173.0,
+      4.0,
+      226.0,
+      -84.4,
+      0.0,
+      0.0,
+      6000
+    ],
+    "paper_to_robot_matrix": [
+      [
+        0.9523809523809523,
+        0.0,
+        173.0
+      ],
+      [
+        0.0,
+        -0.9764309764309764,
+        145.0
+      ],
+      [
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "wrist_roll_zero_deg": 0.0,
+    "wrist_roll_sign": 1.0,
+    "wrist_roll_min_deg": -360.0,
+    "wrist_roll_max_deg": 360.0,
+    "default_pitch_deg": -84.4,
+    "default_claw": 0.0,
+    "motion_mode": "direct_pose",
+    "direct_pick_release_pose_verified": false,
+    "motion_calibration_status": "BLOCKED_UNTIL_FRESH_FEEDBACK: operator observed physical Z25 motion in run 20260729_153642_988359, but coordinate/servo telemetry stayed at HOME; production pick remains gated until flush-backed feedback confirms large travels",
+    "pick_height": 25.0,
+    "release_height": 25.0,
+    "move_duration_ms": 6000,
+    "global_acceleration": 10,
+    "position_tolerance_mm": 10.0,
+    "orientation_tolerance_deg": 3.0,
+    "stable_samples": 3,
+    "motion_timeout_s": 12.0,
+    "vertex_max_error_mm": 8.0,
+    "paper_corner_drift_limit_px": 25.0,
+    "magnet_settle_ms": 200,
+    "magnet_release_settle_ms": 200,
+    "magnet_lease_ms": 500,
+    "physical_pick_enabled": true,
+    "physical_pick_verified": false,
+    "capture_settle_s": 1.0,
+    "workspace_limits": {
+      "x": [
+        160.0,
+        390.0
+      ],
+      "y": [
+        -160.0,
+        160.0
+      ],
+      "z": [
+        20.0,
+        260.0
+      ],
+      "pitch": [
+        -95.0,
+        -80.0
+      ],
+      "roll": [
+        -360.0,
+        360.0
+      ],
+      "claw": [
+        0.0,
+        0.0
+      ]
+    },
+    "sources": {
+      "home_pose": "Target [173,4,226,-84.4,0,0]; previously reached [174,2,227,-83.7,0,0]; Z241 retest stopped at Z219 and was reverted",
+      "position_tolerance_mm": "User approved 10 mm after repeat stable feedback [168,5,219,-86.7,0,0] produced 8.66 mm position error",
+      "paper_to_robot_matrix": "X mapping retained; robot Y sign reversed after run 20260729_130634_457875 showed source-half negative Y moved physically right while the source pieces are left",
+      "wrist": "User: zero initial roll, clockwise positive, counter-clockwise negative, range ±360 degrees",
+      "heights": "Operator observed physical motion toward (246,35,25,-84.4,0,0) in run 20260729_153642_988359, while 79 coordinate/servo samples stayed at HOME. Production therefore treats unchanged large-travel telemetry as STALE_FEEDBACK_HARDWARE_FAULT and keeps direct_pick_release_pose_verified=false until flush-backed feedback confirms arrivals.",
+      "magnet": "STM32 USART1 application uses 115200 8N1 commands and a 50..500 ms timed MAGNET_ON lease. The by-id path ending 5B7A030191 is user-provided deployment data and must be rechecked on Jetson. Production sequence is pick-feedback-confirm -> MAGNET_ON/status-confirm -> release-feedback-confirm -> MAGNET_OFF/status-confirm. physical_pick_verified remains false until post-move visual evidence.",
+      "motion": "Mounted-camera low-speed setting: duration 6000 ms, global acceleration 10. Arrival requires flushed post-request coordinate replies; telemetry change is not labeled as proven physical motion."
+    },
+    "_note": "Single active source for NexArm, camera and STM32 magnet endpoints, arm calibration, HOME, motion, arrival, planning gates and workspace parameters. Production Q1 is STM32-only; real energization still requires --confirm RUN_Q1. Stale or uncorrelated feedback is a hard fault and blocks the next pose and magnet ON.",
+    "_path": "/home/jetson/2026E/q1/config/robot_config.json"
+  },
+  "status": "MOTION_ABORTED_NO_FURTHER_POSE",
+  "motion_executed": true,
+  "magnet_called": false,
+  "full_q1_executed": false,
+  "checks": {
+    "k230_fixed_by_id": {
+      "status": "PASS",
+      "detail": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5B7A028646-if00"
+    },
+    "k230_device_free": {
+      "status": "PASS",
+      "detail": {
+        "path": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5B7A028646-if00",
+        "resolved": "/dev/ttyACM1",
+        "users": []
+      }
+    },
+    "nexarm_device_free": {
+      "status": "PASS",
+      "detail": {
+        "path": "/dev/serial/by-id/usb-1a86_USB_Serial-if00-port0",
+        "resolved": "/dev/ttyUSB0",
+        "users": [],
+        "discovery": {
+          "source": "configured",
+          "stable_by_id": true
+        }
+      }
+    },
+    "no_magnet_process": {
+      "status": "PASS",
+      "detail": "no matching process"
+    },
+    "pose_config_and_project_envelope": {
+      "status": "PASS",
+      "detail": {
+        "home_pose": {
+          "x": 173.0,
+          "y": 4.0,
+          "z": 226.0,
+          "pitch": -84.4,
+          "roll": 0.0,
+          "claw": 0.0
+        },
+        "violations": [],
+        "note": "software envelope from known project poses; physical clearance is confirmed only by the human RUN_ARM_RESET attestation"
+      }
+    },
+    "low_speed_config": {
+      "status": "PASS",
+      "detail": {
+        "move_duration_ms": 6000,
+        "global_acceleration": 10,
+        "acceleration_scale_note": "SDK command exists; numeric scale needs real-machine verification"
+      }
+    },
+    "k230_ping_status": {
+      "status": "PASS",
+      "detail": {
+        "port": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5B7A028646-if00",
+        "ping": "pass",
+        "status": "pass",
+        "fixed_width": 1280,
+        "fixed_height": 720,
+        "fixed_baudrate": 460800
+      }
+    },
+    "k230_warm_capture_1280x720": {
+      "status": "PASS",
+      "detail": {
+        "actual": [
+          1280,
+          720
+        ],
+        "meta": {
+          "session_id": 2779098484,
+          "request_id": 7,
+          "frame_id": 89,
+          "capture_timestamp_ms": 15431007,
+          "jpeg_bytes": 57515,
+          "capture_ms": 18,
+          "encode_ms": 172,
+          "receive_ms": 1347.7744640003948,
+          "decode_ms": 18.7162559996068,
+          "total_ms": 1585.2299199996196,
+          "crc_ok": true,
+          "retry_count": 0
+        }
+      }
+    },
+    "nexarm_communication": {
+      "status": "PASS",
+      "detail": {
+        "port": "/dev/serial/by-id/usb-1a86_USB_Serial-if00-port0",
+        "firmware_version": "1.0.0",
+        "current_pose": {
+          "x": 169.0,
+          "y": 5.0,
+          "z": 215.0,
+          "pitch": -88.1,
+          "roll": 0.0,
+          "claw": 0.0
+        }
+      }
+    },
+    "human_camera_bracket_and_cable_clearance": {
+      "status": "PASS",
+      "detail": "operator attested by RUN_ARM_RESET"
+    },
+    "human_workspace_clear": {
+      "status": "PASS",
+      "detail": "operator attested by RUN_ARM_RESET"
+    }
+  },
+  "poses": [
+    {
+      "name": "home_timeout",
+      "target": {
+        "x": 173.0,
+        "y": 4.0,
+        "z": 226.0,
+        "pitch": -84.4,
+        "roll": 0.0,
+        "claw": 0.0
+      },
+      "actual": {
+        "x": 168.0,
+        "y": 5.0,
+        "z": 214.0,
+        "pitch": -88.6,
+        "roll": 0.0,
+        "claw": 0.0
+      },
+      "error": {
+        "x_mm": -5.0,
+        "y_mm": 1.0,
+        "z_mm": -12.0,
+        "position_mm": 13.038404810405298,
+        "pitch_deg": -4.199999999999989,
+        "roll_deg": 0.0,
+        "claw_deg": 0.0
+      }
+    }
+  ],
+  "images": {
+    "warmup": "/home/jetson/2026E/output/runs/20260729_163015_521142/captures/warmup.jpg",
+    "home_timeout": "/home/jetson/2026E/output/runs/20260729_163015_521142/captures/home_timeout.jpg"
+  },
+  "last_target_pose": {
+    "x": 173.0,
+    "y": 4.0,
+    "z": 226.0,
+    "pitch": -84.4,
+    "roll": 0.0,
+    "claw": 0.0
+  },
+  "error": "TimeoutError: NexArm arrival timeout: target={'x': 173.0, 'y': 4.0, 'z': 226.0, 'pitch': -84.4, 'roll': 0.0, 'claw': 0.0}, last_actual={'x': 168.0, 'y': 5.0, 'z': 214.0, 'pitch': -88.6, 'roll': 0.0, 'claw': 0.0}, last_error={'x_mm': -5.0, 'y_mm': 1.0, 'z_mm': -12.0, 'position_mm': 13.038404810405298, 'pitch_deg': -4.199999999999989, 'roll_deg': 0.0, 'claw_deg': 0.0}, result=TIMEOUT_AFTER_FEEDBACK_CHANGE, feedback does not independently prove physical motion; max_observed_feedback_delta_mm=1.414",
+  "updated_at": "2026-07-29T16:30:35.675296+08:00"
+}

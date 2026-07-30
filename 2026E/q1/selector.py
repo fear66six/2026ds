@@ -176,7 +176,13 @@ def _candidate_score(scene: SceneAnalysis, template_id: str, remaining: list[str
     return score, features
 
 
-def select_next_piece(scene: SceneAnalysis, audit: AuditResult) -> tuple[str, dict]:
+def select_next_piece(
+    scene: SceneAnalysis,
+    audit: AuditResult,
+    *,
+    excluded_templates: set[str] | None = None,
+) -> tuple[str, dict]:
+    excluded = excluded_templates or set()
     if audit.recovery_template and audit.recovery_mode:
         return audit.recovery_template, {
             "reason": audit.recovery_mode,
@@ -200,7 +206,11 @@ def select_next_piece(scene: SceneAnalysis, audit: AuditResult) -> tuple[str, di
     candidates = [
         key
         for key, state in scene.templates.items()
-        if state.status == PieceTaskStatus.UNPLACED and state.detected_piece is not None
+        if (
+            key not in excluded
+            and state.status == PieceTaskStatus.UNPLACED
+            and state.detected_piece is not None
+        )
     ]
     if not candidates:
         raise RuntimeError("PLAN_FAILED: 没有可搬运的已确认碎片")

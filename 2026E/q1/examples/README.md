@@ -5,10 +5,9 @@
 - [../COORDINATE_FRAMES.md](../COORDINATE_FRAMES.md)
 - [../CORRECTION_STANDARDS.md](../CORRECTION_STANDARDS.md)
 
-| 文件 | 对应参数 |
-|---|---|
-| `paper_calibration.example.json` | `--paper-calibration` |
-| `arm_calibration.example.json` | `--arm-calibration`（含腕部 roll） |
-| `safety_config.example.json` | `--safety-config` |
+A4 四角像素不再提供静态模板，运行时由 `vision.detect_paper` 从实图检测。
+
+机械臂正式参数不再提供分散模板，统一维护在
+`../config/robot_config.json`。
 
 示例内数值仅表示字段形状，禁止直接用于真机运动。

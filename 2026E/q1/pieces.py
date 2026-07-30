@@ -7,6 +7,8 @@ from typing import List, Tuple
 
 import numpy as np
 
+from . import config
+
 Point = Tuple[float, float]
 
 # 图 2 目标矩形总尺寸
@@ -148,9 +150,19 @@ def target_rectangle_vertices_mm(origin_mm: tuple[float, float]) -> np.ndarray:
 
 def template_target_vertices_mm(template_index: int, origin_mm: tuple[float, float]) -> np.ndarray:
     """单块模板在目标区的精确顶点（mm）。"""
-    return PIECE_TEMPLATES[template_index].world_vertices(
+    vertices = PIECE_TEMPLATES[template_index].world_vertices(
         (origin_mm[0] / 10.0, origin_mm[1] / 10.0)
     ) * 10.0
+    mode = config.TARGET_LAYOUT_MODE
+    if mode == "mirror_x":
+        vertices[:, 0] = (
+            float(origin_mm[0])
+            + TARGET_RECT_WIDTH_MM
+            - (vertices[:, 0] - float(origin_mm[0]))
+        )
+    elif mode != "figure":
+        raise ValueError(f"unsupported TARGET_LAYOUT_MODE: {mode}")
+    return vertices
 
 
 def _point_on_segment(p: Point, a: Point, b: Point, tol: float = 0.05) -> bool:

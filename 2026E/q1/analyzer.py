@@ -9,13 +9,12 @@ import cv2
 import numpy as np
 
 from . import config
-from .calibration import PaperCalibration
 from .edge_refinement import refine_polygon_from_contour
 from .geometry import normalize_angle_deg, principal_angle_deg
 from .models import PieceGeometry, PieceTaskStatus, SceneAnalysis, Snapshot, TemplateState
 from .pieces import template_target_vertices_mm
 from .puzzle_solver import TEMPLATE_IDS, assign_templates_global
-from .vision import PaperFrame, cm_to_px, detect_divider_line, detect_paper, detect_pieces
+from .vision import PaperFrame, cm_to_px, detect_divider_line, detect_paper
 
 
 def _edge_features(vertices: np.ndarray) -> tuple[list[float], list[float]]:
@@ -81,8 +80,9 @@ def _roi_metrics(
     contour_px: np.ndarray,
     frame_shape: tuple[int, ...],
     *,
+    paper: PaperFrame,
     region: str,
-    divider_y_px: float,
+    divider_y_cm: float,
 ) -> tuple[bool, float, str | None]:
     h, w = frame_shape[:2]
     mask = np.zeros((h, w), dtype=np.uint8)
@@ -90,21 +90,43 @@ def _roi_metrics(
     total = float(np.count_nonzero(mask))
     if total < 1:
         return True, 0.0, "EMPTY_CONTOUR"
-    if region == "UPPER_SOURCE":
-        roi = np.zeros_like(mask)
-        roi[: max(1, int(divider_y_px)), :] = 1
-    else:
-        roi = np.zeros_like(mask)
-        roi[min(h - 1, int(divider_y_px)) :, :] = 1
+
+    # 分区在 A4 纸面坐标中定义。横放 A4 时，纸面 y 轴对应图像 x 轴；
+    # 如果继续使用水平像素线，左侧源碎片会被误判为跨越分界线。
+    y0_cm, y1_cm = (
+        (0.0, divider_y_cm)
+        if region == "UPPER_SOURCE"
+        else (divider_y_cm, config.A4_HEIGHT_CM)
+    )
+    roi_corners = np.rint(
+        [
+            cm_to_px((0.0, y0_cm), paper),
+            cm_to_px((config.A4_WIDTH_CM, y0_cm), paper),
+            cm_to_px((config.A4_WIDTH_CM, y1_cm), paper),
+            cm_to_px((0.0, y1_cm), paper),
+        ]
+    ).astype(np.int32)
+    roi = np.zeros_like(mask)
+    cv2.fillConvexPoly(roi, roi_corners, 1)
     inside = float(np.count_nonzero(mask & roi))
     inside_ratio = inside / total
-    x, y, bw, bh = cv2.boundingRect(contour_px.astype(np.int32))
-    margin = 2
-    touches_a4 = x <= margin or y <= margin or x + bw >= w - margin or y + bh >= h - margin
+
+    contour_points = np.asarray(contour_px, dtype=np.float64).reshape(-1, 2)
+    paper_polygon = np.asarray(paper.corners_px, dtype=np.float32).reshape(-1, 1, 2)
+    min_paper_distance = min(
+        cv2.pointPolygonTest(paper_polygon, (float(x), float(y)), True)
+        for x, y in contour_points
+    )
+    touches_a4 = min_paper_distance <= 2.0
+
     # 接触分区边界
-    ys, xs = np.where(mask > 0)
-    touches_divider = bool(np.any(np.abs(ys - divider_y_px) <= 1.5))
-    crosses = bool(np.any(ys < divider_y_px) and np.any(ys > divider_y_px))
+    from .vision import _px_to_cm
+
+    contour_cm = np.asarray([_px_to_cm(point, paper) for point in contour_points])
+    paper_y = contour_cm[:, 1]
+    divider_margin_cm = 2.0 / max(float(paper.px_per_cm), 1.0)
+    touches_divider = bool(np.any(np.abs(paper_y - divider_y_cm) <= divider_margin_cm))
+    crosses = bool(np.any(paper_y < divider_y_cm) and np.any(paper_y > divider_y_cm))
     if touches_a4:
         return True, inside_ratio, "TOUCHES_A4_BORDER"
     if crosses:
@@ -113,10 +135,10 @@ def _roi_metrics(
         return True, inside_ratio, "TOUCHES_VALID_ROI_BORDER"
     if inside_ratio < config.MIN_INSIDE_RATIO:
         return True, inside_ratio, "INSIDE_RATIO_TOO_LOW"
-    cy = float(ys.mean())
-    if region == "UPPER_SOURCE" and cy >= divider_y_px:
+    center_y_cm = float(np.mean(paper_y))
+    if region == "UPPER_SOURCE" and center_y_cm >= divider_y_cm:
         return True, inside_ratio, "CENTER_OUTSIDE_REGION"
-    if region == "LOWER_TARGET" and cy < divider_y_px:
+    if region == "LOWER_TARGET" and center_y_cm < divider_y_cm:
         return True, inside_ratio, "CENTER_OUTSIDE_REGION"
     return False, inside_ratio, None
 
@@ -129,15 +151,22 @@ class SceneAnalyzer:
         center_tolerance_mm: float = 5.0,
         angle_tolerance_deg: float = 5.0,
         vertex_tolerance_mm: float = 8.0,
-        paper_calibration: PaperCalibration | None = None,
+        paper_corner_drift_limit_px: float = 25.0,
     ) -> None:
         self.target_origin_mm = target_origin_mm
         self.center_tolerance_mm = center_tolerance_mm
         self.angle_tolerance_deg = angle_tolerance_deg
         self.vertex_tolerance_mm = vertex_tolerance_mm
-        self.paper_calibration = paper_calibration
+        self.paper_corner_drift_limit_px = float(paper_corner_drift_limit_px)
         self.full_analysis_count = 0
         self.last_assignment = None
+        self.last_paper = None
+        self.last_detected_paper: PaperFrame | None = None
+        self.last_divider_y_cm = None
+        self.locked_paper: PaperFrame | None = None
+        self.locked_divider_y_cm: float | None = None
+        self.last_paper_corner_drift_px: float | None = None
+        self.last_paper_rejection_reason: str | None = None
 
     def analyze(self, snapshot: Snapshot, cycle_index: int) -> SceneAnalysis:
         self.full_analysis_count += 1
@@ -168,28 +197,34 @@ class SceneAnalyzer:
                 for piece in pieces:
                     piece.template_id = None
         else:
-            if self.paper_calibration is not None:
-                rectified_started = time.perf_counter()
-                analysis_frame = self.paper_calibration.rectify(snapshot.frame)
-                output_w, output_h = self.paper_calibration.output_size
-                forced_paper = PaperFrame(
-                    corners_px=np.array(
-                        [[0, 0], [output_w - 1, 0], [output_w - 1, output_h - 1], [0, output_h - 1]],
-                        dtype=np.float32,
-                    ),
-                    px_per_cm=float((output_w / 21.0 + output_h / 29.7) / 2.0),
-                    divider_y_cm=config.DIVIDER_Y_CM,
-                )
-                pieces, paper_valid, timings, assignment = self._from_image(analysis_frame, forced_paper)
-                timings["rectify_ms"] = (time.perf_counter() - rectified_started) * 1000.0
-            else:
-                pieces, paper_valid, timings, assignment = self._from_image(snapshot.frame)
+            # A4 corners come only from detect_paper on the live frame.
+            pieces, paper_valid, timings, assignment = self._from_image(snapshot.frame)
             self.last_assignment = assignment
             if assignment is not None:
                 assignment_margin = assignment.confidence_margin
                 assignment_total_cost = assignment.total_cost
                 if not assignment.accepted:
                     warnings.append(assignment.rejection_reason or "ASSIGNMENT_REJECTED")
+                elif self.locked_paper is None and self.last_paper is not None:
+                    self.locked_paper = PaperFrame(
+                        corners_px=np.asarray(
+                            self.last_paper.corners_px, dtype=np.float32
+                        ).copy(),
+                        px_per_cm=float(self.last_paper.px_per_cm),
+                        divider_y_cm=float(self.last_paper.divider_y_cm),
+                        landscape_in_image=bool(self.last_paper.landscape_in_image),
+                    )
+                    self.locked_divider_y_cm = float(
+                        self.last_divider_y_cm or config.DIVIDER_Y_CM
+                    )
+                    warnings.append("PAPER_FRAME_LOCKED_FOR_RUN")
+            if self.last_paper_rejection_reason:
+                warnings.append(self.last_paper_rejection_reason)
+            elif self.last_paper_corner_drift_px is not None:
+                warnings.append(
+                    "PAPER_FRAME_DRIFT_PX="
+                    f"{self.last_paper_corner_drift_px:.2f}"
+                )
         templates = self._classify_templates(pieces, cycle_index)
         placed = {key for key, value in templates.items() if value.status == PieceTaskStatus.PLACED_OK}
         remaining = set(TEMPLATE_IDS) - placed
@@ -261,38 +296,60 @@ class SceneAnalyzer:
         return result
 
     def _from_image(
-        self, frame: np.ndarray, paper_override: PaperFrame | None = None
+        self, frame: np.ndarray
     ) -> tuple[list[PieceGeometry], bool, dict[str, float], object]:
         timings: dict[str, float] = {}
         t = time.perf_counter()
-        paper = paper_override or detect_paper(frame)
+        detected_paper = detect_paper(frame)
+        self.last_detected_paper = detected_paper
         timings["rectify_ms"] = (time.perf_counter() - t) * 1000.0
-        if paper is None:
+        self.last_paper_corner_drift_px = None
+        self.last_paper_rejection_reason = None
+        if detected_paper is None:
+            self.last_paper = None
+            self.last_divider_y_cm = None
             return [], False, timings, None
-        divider = detect_divider_line(frame, paper) or config.DIVIDER_Y_CM
-        divider_y_px = float(divider * paper.px_per_cm)
-        t = time.perf_counter()
-        # 已标定俯视图：粗检测+高分辨精修；否则回退旧 HSV 通路
-        if paper_override is not None:
-            from .white_segmentation import coarse_to_fine_contours
-
-            fine_contours = coarse_to_fine_contours(frame, scale=0.5, pad_px=14)
-            detected = []
-            for cnt in fine_contours:
-                piece = None
-                from .vision import _contour_to_piece
-
-                piece = _contour_to_piece(cnt, paper, divider, frame.shape)
-                if piece is not None:
-                    detected.append(piece)
+        if self.locked_paper is not None:
+            drift = float(
+                np.linalg.norm(
+                    np.asarray(detected_paper.corners_px, dtype=np.float64)
+                    - np.asarray(self.locked_paper.corners_px, dtype=np.float64),
+                    axis=1,
+                ).max()
+            )
+            self.last_paper_corner_drift_px = drift
+            if drift > self.paper_corner_drift_limit_px:
+                self.last_paper = detected_paper
+                self.last_divider_y_cm = None
+                self.last_paper_rejection_reason = (
+                    "PAPER_FRAME_DRIFT_EXCEEDED: "
+                    f"drift_px={drift:.2f}, "
+                    f"limit_px={self.paper_corner_drift_limit_px:.2f}"
+                )
+                return [], False, timings, None
+            paper = self.locked_paper
+            divider = float(
+                self.locked_divider_y_cm or config.DIVIDER_Y_CM
+            )
         else:
-            detected = detect_pieces(frame, paper, divider, config.DEFAULT_HSV_RANGES, live=False)
+            paper = detected_paper
+            divider = detect_divider_line(frame, paper) or config.DIVIDER_Y_CM
+        self.last_paper = paper
+        self.last_divider_y_cm = float(divider)
+        t = time.perf_counter()
+        from .white_segmentation import coarse_to_fine_contours
+        from .vision import _contour_to_piece
+
+        fine_contours = coarse_to_fine_contours(frame, scale=0.5, pad_px=14)
+        detected = []
+        for cnt in fine_contours:
+            piece = _contour_to_piece(cnt, paper, divider, frame.shape)
+            if piece is not None:
+                detected.append(piece)
         timings["segmentation_ms"] = (time.perf_counter() - t) * 1000.0
         t_edge = time.perf_counter()
         candidates: list[PieceGeometry] = []
         for index, piece in enumerate(detected):
-            contour_cm = np.asarray(piece.contour, dtype=np.float64).reshape(-1, 2)
-            # contour 是像素；转 mm
             # DetectedPiece.contour 为像素坐标
             contour_px = np.asarray(piece.contour, dtype=np.float64).reshape(-1, 2)
             # 批量 px->cm->mm
@@ -308,8 +365,9 @@ class SceneAnalyzer:
             touches, inside_ratio, reject = _roi_metrics(
                 piece.contour.reshape(-1, 1, 2),
                 frame.shape,
+                paper=paper,
                 region=region,
-                divider_y_px=divider_y_px,
+                divider_y_cm=divider,
             )
             edges, angles = _edge_features(vertices_mm)
             candidates.append(

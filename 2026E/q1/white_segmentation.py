@@ -65,40 +65,40 @@ def coarse_to_fine_contours(
     pad_px: int = 12,
     debug_dir: Path | None = None,
 ) -> list[np.ndarray]:
-    """低分辨率定位候选，高分辨率 ROI 精修轮廓。"""
+    """返回高分辨率白片轮廓，低分辨率结果仅用于诊断。
+
+    旧实现按每个低分辨率连通域分别扩大 ROI，再在 ROI 中取最大轮廓。
+    同一块白片被分成多个粗连通域时会重复返回，而细长白片如果在缩放时
+    断裂则会被完全漏掉。正式匹配需要恰好覆盖四块，因此以全分辨率分割
+    为权威结果；840x1188 的标定图上该开销可接受。
+    """
     h, w = rectified_bgr.shape[:2]
     small = cv2.resize(rectified_bgr, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
     coarse_mask = segment_white_pieces(small, debug_dir=None)
+    full_mask = segment_white_pieces(rectified_bgr, debug_dir=debug_dir)
+    refined_contours, _ = cv2.findContours(
+        full_mask,
+        cv2.RETR_EXTERNAL,
+        cv2.CHAIN_APPROX_NONE,
+    )
+    refined_contours = [
+        cnt for cnt in refined_contours if cv2.contourArea(cnt) >= 200.0
+    ]
+
     if debug_dir is not None:
         debug_dir.mkdir(parents=True, exist_ok=True)
         cv2.imwrite(str(debug_dir / "coarse_mask.png"), coarse_mask)
-
-    num, labels, stats, _ = cv2.connectedComponentsWithStats(coarse_mask, connectivity=8)
-    refined_contours: list[np.ndarray] = []
-    roi_vis = rectified_bgr.copy()
-    for i in range(1, num):
-        x, y, bw, bh, area = stats[i]
-        if area < 40:
-            continue
-        # 映射回高分辨率并扩边
-        x0 = max(0, int(x / scale) - pad_px)
-        y0 = max(0, int(y / scale) - pad_px)
-        x1 = min(w, int((x + bw) / scale) + pad_px)
-        y1 = min(h, int((y + bh) / scale) + pad_px)
-        roi = rectified_bgr[y0:y1, x0:x1]
-        if roi.size == 0:
-            continue
-        fine_mask = segment_white_pieces(roi)
-        contours, _ = cv2.findContours(fine_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
-        if not contours:
-            continue
-        cnt = max(contours, key=cv2.contourArea)
-        cnt = cnt + np.array([[[x0, y0]]], dtype=cnt.dtype)
-        refined_contours.append(cnt)
-        cv2.rectangle(roi_vis, (x0, y0), (x1, y1), (0, 255, 255), 1)
-
-    if debug_dir is not None:
-        cv2.imwrite(str(debug_dir / "candidate_rois.png"), roi_vis)
+        candidate_vis = rectified_bgr.copy()
+        for cnt in refined_contours:
+            x, y, bw, bh = cv2.boundingRect(cnt)
+            cv2.rectangle(
+                candidate_vis,
+                (max(0, x - pad_px), max(0, y - pad_px)),
+                (min(w - 1, x + bw + pad_px), min(h - 1, y + bh + pad_px)),
+                (0, 255, 255),
+                1,
+            )
+        cv2.imwrite(str(debug_dir / "candidate_rois.png"), candidate_vis)
         refined_vis = np.zeros(rectified_bgr.shape[:2], dtype=np.uint8)
         cv2.drawContours(refined_vis, refined_contours, -1, 255, -1)
         cv2.imwrite(str(debug_dir / "refined_mask.png"), refined_vis)

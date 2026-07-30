@@ -1,62 +1,14 @@
-"""A4透视标定与纸面坐标到机械臂坐标的显式门禁。"""
+"""纸面坐标到机械臂坐标的显式门禁。"""
 
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
 from pathlib import Path
 
-import cv2
 import numpy as np
 
 from .models import RobotPose
 from .wrist import WristRotationResult, choose_wrist_release_roll
-
-
-@dataclass
-class PaperCalibration:
-    image_size: tuple[int, int]
-    corners_px: np.ndarray
-    output_size: tuple[int, int] = (840, 1188)
-
-    def __post_init__(self) -> None:
-        w, h = self.output_size
-        dst = np.array([[0, 0], [w - 1, 0], [w - 1, h - 1], [0, h - 1]], np.float32)
-        self.matrix = cv2.getPerspectiveTransform(self.corners_px.astype(np.float32), dst)
-        self.inverse_matrix = np.linalg.inv(self.matrix)
-        self._scaled_cache: dict[tuple[int, int], "PaperCalibration"] = {}
-
-    @classmethod
-    def load(cls, path: Path) -> "PaperCalibration":
-        data = json.loads(path.read_text(encoding="utf-8"))
-        size = data.get("camera_resolution") or data.get("image_size")
-        corners = data.get("corners_px") or data.get("corners")
-        output = data.get("target_size_px") or data.get("output_size") or [840, 1188]
-        if not size or not corners:
-            raise ValueError("纸面标定缺少图像尺寸或四角")
-        return cls(tuple(map(int, size)), np.asarray(corners, np.float32), tuple(map(int, output)))
-
-    def scaled_for(self, frame_shape: tuple[int, ...]) -> "PaperCalibration":
-        h, w = frame_shape[:2]
-        old_w, old_h = self.image_size
-        if (w, h) == (old_w, old_h):
-            return self
-        if (w, h) in self._scaled_cache:
-            return self._scaled_cache[(w, h)]
-        sx, sy = w / old_w, h / old_h
-        if abs(sx - sy) > 0.01:
-            raise ValueError("CALIBRATION_REQUIRED: 摄像头宽高比例与标定不一致")
-        corners = self.corners_px * np.array([sx, sy], np.float32)
-        scaled = PaperCalibration((w, h), corners, self.output_size)
-        self._scaled_cache[(w, h)] = scaled
-        return scaled
-
-    def rectify(self, frame: np.ndarray) -> np.ndarray:
-        calibration = self.scaled_for(frame.shape)
-        return cv2.warpPerspective(frame, calibration.matrix, calibration.output_size)
-
-    def transform_points(self, points: np.ndarray) -> np.ndarray:
-        return cv2.perspectiveTransform(np.asarray(points, np.float32).reshape(-1, 1, 2), self.matrix).reshape(-1, 2)
 
 
 class ArmCoordinateMapper:

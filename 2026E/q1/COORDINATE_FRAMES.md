@@ -7,7 +7,7 @@
 
 ```text
 相机像素 (px)
-    │ PaperCalibration 透视矫正
+    │ vision.detect_paper 检测 A4 四角
     ▼
 A4 纸面坐标 (mm 或 cm，左上原点，x 右，y 下)
     │ ArmCoordinateMapper.paper_to_robot
@@ -99,23 +99,25 @@ NexArm 笛卡尔坐标 (x,y,z) + pitch/roll/claw
 world_mm = template_local_cm * 10 + target_origin_mm
 ```
 
-## 4. 纸面标定（像素 → A4）
+## 4. 纸面检测（像素 → A4）
 
-文件：`--paper-calibration` JSON，模板见 `examples/paper_calibration.example.json`。
+正式路径不再使用静态 `--paper-calibration` JSON。每帧通过
+`vision.detect_paper(frame)` 从实图检测 A4 四角，再映射到纸面坐标。
 
-| 字段 | 含义 | 要求 |
+| 量 | 含义 | 来源 |
 |---|---|---|
-| `image_size` 或 `camera_resolution` | 标定时图像宽高 | 与运行分辨率一致或等比缩放 |
-| `corners_px` | A4 四角像素 | 顺序 **TL, TR, BR, BL** |
-| `output_size` | 矫正图尺寸 | 默认 `[840, 1188]`（对应 21×29.7 cm 比例） |
+| `corners_px` | A4 四角像素，顺序 TL, TR, BR, BL | `detect_paper` |
+| `px_per_cm` | 像素到厘米尺度 | `detect_paper` |
+| `divider_y_cm` | 上下分界线 | `detect_divider_line` 或默认半高 |
 
-矫正后：输出图左上 ≈ 纸面 (0,0)，右下 ≈ (21 cm, 29.7 cm)。
+检测失败时本轮场景无效，不进入抓放。
 
-**待实机验证**：实际相机分辨率、四角点击精度、镜头畸变是否需额外校正（V-008）。
+**待实机验证**：当前安装姿态下 `detect_paper` 对横放 A4 的稳定性和角点抖动（V-008）。
 
 ## 5. 机械臂标定（纸面 mm → NexArm）
 
-文件：`--arm-calibration` JSON，模板见 `examples/arm_calibration.example.json`。
+文件：`--robot-config q1/config/robot_config.json`。机械臂矩阵、腕部、HOME、
+高度、运动参数、到位判定、工作区和稳定设备端口集中在该文件中。
 
 ### 5.1 位置矩阵
 
@@ -148,25 +150,26 @@ roll = clamp(roll, wrist_roll_min_deg, wrist_roll_max_deg)
 **工程决策**：用户确认纸面内旋转走 NexArm `roll`。  
 **待实机验证**：零位与符号（`docs/TODO_VERIFY.md` V-009）。小角度（±15°）验证后再写进 JSON。
 
-### 5.3 高度与安全（来自 safety / arm JSON）
+### 5.3 高度与安全（来自 robot_config.json）
 
-`--safety-config`（或写在 arm JSON 里）必填，否则禁止启动：
+`--robot-config` 必填，否则禁止启动：
 
 | 字段 | 用途 |
 |---|---|
-| `safe_height` | 安全/转移高度 z |
+| `motion_mode` | 正式执行模式；当前必须为 `direct_pose` |
 | `pick_height` | 吸取高度 z |
 | `release_height` | 释放高度 z |
 | `move_duration_ms` | 单步 `set_pose` 时长 |
 | `magnet_settle_ms` | 吸合后等待 |
-| `release_peel_delta` | 释放侧移 `(dx, dy, dz)` |
 | `workspace_limits` | `x/y/z` 允许区间 |
 | `home_pose` | **唯一**观察/拍照位，与复位 HOME 统一：`[x,y,z,pitch,roll,claw]` 或再加 `duration_ms` |
-| `observe_pose` | 仅作 `home_pose` 同义别名；加载后写入运行时的 `observe_pose` 字段供 `move_to_observe_pose` 使用 |
+| `position_tolerance_mm` | 三维合成到位容差，当前用户批准为 10 mm |
+| `orientation_tolerance_deg` | pitch/roll/claw 到位容差 |
+| `nexarm_port` | 固定 NexArm by-id 设备路径 |
 
-模板：`examples/safety_config.example.json`（数值待实机替换）。
-
-当前默认 HOME/观察候选为 `(173,4,226,-90,0,0)`，时长默认 6000 ms；XYZ 来自实测可达停止位，pitch 根据 A4 边框“下宽上窄”约 10% 的对称梯形调整到 -90°。复位测试 pitch 范围为 `[-95,-80]`，HOME 不贴边。历史不可达候选 `(150,0,300,-96)` 与 TaskSuite `(200,0,160,-90,0,-60)` 仅作参考。
+当前 HOME/观察位为 `(173,4,226,-84.4,0,0)`，时长 6000 ms，到位位置容差
+10 mm。Z241 候选实测停在 Z219，已回退；工作区和历史依据见
+`robot_config.json`，低高度路径仍为 UNVERIFIED。
 
 ## 6. 单步规划用的参考点
 
@@ -182,8 +185,13 @@ rigid_placement_transform(当前顶点_mm, 目标模板顶点_mm)
 | `pick_point_paper` | 纸面抓取参考点 = `start_c`（mm） |
 | `target_pose_paper` | 纸面释放参考点 = `end_c`（mm） |
 | `rotation_delta_deg` | 纸面内需转过的角 |
-| `approach/transfer` | 同 XY，z = `safe_height` |
-| `source/release` | z = pick/release 高度；`roll` = 映射后的腕部角 |
+| `approach/transfer/rotate` | `direct_pose` 下不生成，保持 `None` 仅用于旧产物兼容 |
+| `source/release` | 完整六维目标；z = pick/release 高度，`roll` = 映射后的腕部角 |
+
+正式执行依次调用一次完整 `set_pose(source)` 和一次完整 `set_pose(release)`。
+XYZ/Pitch/Roll/Claw 由同一条厂商坐标命令发送，不构造固定 XY 的竖直升降或
+固定 Z 的横向转运航点。SDK 命令形式不等于物理路径已经验证：两个 Z25 目标及
+源到目标的低位扫掠仍为 `UNVERIFIED`。
 
 ## 7. 运行产物里怎么核对坐标
 
