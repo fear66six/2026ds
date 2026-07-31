@@ -10,7 +10,7 @@
     [-0.014285714285705402, -0.9528619528619576, 151.5],
     [0.0, 0.0, 1.0]
   ],
-  "surface_z_plane_mm": [0.04, -0.005, -33.25],
+  "surface_z_plane_mm": [0.032, -0.005, -33.25],
   "surface_z_ref_paper_mm": [105.0, 148.5],
   "wrist_roll_zero_deg": 0.0,
   "wrist_roll_sign": 1.0,
