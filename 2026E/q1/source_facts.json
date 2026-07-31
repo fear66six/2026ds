@@ -3,7 +3,7 @@
     "value": [175.0, 0.0, 210.0, -90.0, 0.0, 0.0, 3000],
     "source": "User selected project HOME [175,0,210,-90,0,0] for the complete-paper view and requested a faster reset on 2026-07-31; HOME has an independent 3000 ms duration",
     "implementation": "q1/executors/nexarm.py::move_to_observe_pose (direct single move)",
-    "behavior": "正式 run 打开 NexArm 串口后立即把 HOME 作为第一条协议命令发送，等待 HOME 的 3000 ms 控制器时长和 1.0 s 机械稳定时间后初始化 K230/STM32，只拍一张用于识别和规划的正式图，再执行 P1-P4 队列。BUFFER 同样为 3000 ms+1.0 s，PICK/RELEASE 为 6000 ms+1.0 s；当前实机反馈不参与生产流程推进",
+    "behavior": "正式 run 打开 NexArm 串口后立即把 HOME 作为第一条协议命令发送，等待 HOME 的 3000 ms 控制器时长和 200 ms 机械稳定时间后初始化 K230/STM32，只拍一张用于识别和规划的正式图，再按 P4-P3-P2-P1 从大到小执行队列；当前实机反馈不参与生产流程推进",
     "historical_tasksuite": {
       "value": [200.0, 0.0, 160.0, -90.0, 0.0, -60.0, 1500],
       "source": "TaskSuite_E/board_roi_config.h + system_task_handle.cpp::move_observe",
@@ -41,26 +41,82 @@
   "q1_target_geometry": {
     "official_template_mm": [100.0, 60.0],
     "fixed_piece_target_scale": 1.03,
+    "edge_gap_mm": 2.0,
     "scaled_target_mm": [103.0, 61.8],
     "target_origin_mm": [53.5, 191.85],
     "target_center_mm": [105.0, 222.75],
     "source": "docs/E题_拼图装置.pdf page 2 Figure 2; run 20260731_012300_357937 scene/piece_moves JSON",
     "confidence": "B+A+D",
-    "note": "1.03 only calibrates the current fixed Q1 four-piece set; it does not redefine the official Figure 2 dimensions or apply to field-provided pieces"
+    "note": "1.03 only calibrates the current fixed Q1 four-piece set. edge_gap_mm=2 shifts each piece 1 mm radially outward from the centered target; it does not redefine the official Figure 2 dimensions or apply to field-provided pieces."
+  },
+  "q1_pick_point": {
+    "method": "maximum-clearance interior point of the detected polygon at 0.25 mm raster resolution",
+    "pick_robot_xy_offset_mm": [5.0, 5.0],
+    "source": "runs 20260730_232827_207582, 20260730_233201_481210 and 20260730_233351_970591; q1/geometry.py::polygon_maximum_clearance_point; user physical XY correction",
+    "confidence": "A+D",
+    "note": "Across the three runs P4 boundary clearance changes from 0.45..2.12 mm at the old detected center to 19.77..20.48 mm. The +5 mm robot correction applies only to pickup, not release or the paper calibration matrix."
   },
   "q1_transfer_trajectory": {
-    "pick_height": -15.0,
-    "release_height": -15.0,
-    "apex_height": 75.0,
-    "waypoints": [
-      {"xy_fraction": 0.25, "z": 45.0, "roll_fraction": 0.25},
-      {"xy_fraction": 0.60, "z": 75.0, "roll_fraction": 0.60},
-      {"xy_fraction": 1.0, "z": -15.0, "roll_fraction": 1.0}
+    "low_pose_height_source": "q1/config/robot_config.json::pick_height/release_height",
+    "sequence": [
+      "pick_ready",
+      "descend_pick",
+      "magnet_on",
+      "lift_pick",
+      "rotate_in_air",
+      "transit_to_place",
+      "place_ready",
+      "descend_place",
+      "magnet_off",
+      "done_lift"
     ],
-    "duration_ms": [2000, 2000, 2000],
-    "source": "run 20260730_215916_405845; q1/motion.py; q1/executors/nexarm.py",
-    "confidence": "A+C+D",
-    "note": "Offline replanning confirms every segment changes X, Y and Z for all four pieces. Physical trajectory remains to be verified."
+    "geometry": {
+      "approach_dz_mm": 40.0,
+      "transit_z": 120.0
+    },
+    "durations_ms": {
+      "move": 1500,
+      "descend": 800,
+      "lift": 800,
+      "rotate_base": 1200,
+      "post_move_settle": 200
+    },
+    "roll_policy": "Lift at pickup XY with pick roll, then rotate in air at Z=120 to the compensated release roll. Rotation below 1 degree is skipped; otherwise duration=max(400, 1200*max(0.5, abs(normalized roll delta)/90)).",
+    "source": "pintu/jetson_to_nexarm/puzzle_runner.py::PuzzlePickPlaceRunner.execute_one,_rotate_duration_ms; q1/motion.py::plan_single_move; q1/executors/nexarm.py::execute_single_move",
+    "confidence": "A+D",
+    "note": "The fixed BUFFER and diagonal clearance are no longer in the production Q1 chain. All three recorded images replan successfully with the new poses, and Mock execution confirms magnet ON after descend_pick and OFF after descend_place. The physical trajectory remains to be verified."
+  },
+  "q1_teammate_pintu_merge": {
+    "adopted": [
+      "template assignment uses target_scale",
+      "edge_gap_mm=2 target-piece spacing",
+      "large-to-small P4-P3-P2-P1 placement order",
+      "puzzle_runner pick-ready, descend, lift, in-air rotate, transit, place-ready, release and done-lift sequence",
+      "puzzle_runner move, descend, lift, rotate and settle timing"
+    ],
+    "preserved_current_q1": [
+      "single-capture A4 and piece vision",
+      "maximum-clearance pickup point",
+      "current paper-to-robot calibration and pickup correction",
+      "current HOME, heights, wrist sign and STM32 hold session"
+    ],
+    "not_adopted": [
+      "optional relative peel movement",
+      "pintu coordinate polling",
+      "pintu handeye offsets, target origin, heights and wrist sign"
+    ],
+    "source": "pintu/命令.md; pintu/algorithm/bridge/run_execute.py; pintu/algorithm/q1/analyzer.py,motion.py,pieces.py,puzzle_solver.py; pintu/jetson_to_nexarm/puzzle_runner.py,arm_controller.py; current 2026E/q1 sources",
+    "confidence": "A+D",
+    "note": "The adopted logic passed offline replanning on runs 20260730_232827_207582, 20260730_233201_481210 and 20260730_233351_970591. Mock execution issued eight set_pose commands for a nonzero-roll piece in the expected magnet order. Physical placement quality still requires a real run."
+  },
+  "q1_swing_roll_compensation": {
+    "formula": "swing=abs(normalize(atan2(release_y,release_x)-atan2(pick_y,pick_x))); final_roll=normalize(geometric_roll+swing_roll_sign*swing)",
+    "enabled": true,
+    "swing_roll_sign": -1.0,
+    "xy_source": "final commanded robot pickup XY after the +5/+5 mm pickup correction, and unmodified commanded release XY",
+    "source": "D:/OIK/Downloads/pintu/jetson_to_nexarm/puzzle_runner.py::smaller_azimuth_angle_deg,swing_roll_compensation_deg,execute_one; D:/OIK/Downloads/pintu/algorithm/bridge/run_execute.py; q1/wrist.py; q1/motion.py::plan_single_move",
+    "confidence": "A+D",
+    "note": "All four pieces in runs 20260730_232827_207582, 20260730_233201_481210 and 20260730_233351_970591 replan successfully. Computed swing magnitudes span 25.156..52.757 degrees. The formula is source-confirmed; the -1 physical correction sign still requires one real Q1 placement check."
   },
     "q1_partial_paper_detection": {
     "behavior": "For the fixed landscape Q1 composition, detect_paper pairs the left and right dark halves, validates the narrow bright divider, and gives that full-width candidate priority over a single dark half. A clipped top or bottom edge is extrapolated from the visible 29.7 cm side using the fixed A4 aspect ratio.",
@@ -71,6 +127,8 @@
   "unknown_real_parameters": [
     "电磁铁吸合稳定时间",
     "释放侧移方向与距离",
-    "磁吸保持与最终拼放精度"
+    "磁吸保持与最终拼放精度",
+    "摆臂 roll 补偿符号与最终释放角实机精度",
+    "P4-P3-P2-P1 顺序、2 mm 邻片间隙和 Z120 空中转腕/转运轨迹的实机效果"
   ]
 }

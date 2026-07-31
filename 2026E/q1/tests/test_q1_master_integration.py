@@ -87,11 +87,11 @@ def test_landscape_paper_uses_known_halfway_divider():
 
 def test_wrist_sign_mapping_has_no_software_range_limit():
     mapper = ArmCoordinateMapper(ROBOT_CONFIG)
-    assert mapper.wrist_roll_sign == pytest.approx(-1.0)
+    assert mapper.wrist_roll_sign == pytest.approx(1.0)
     assert mapper.map_in_plane_rotation(0).release_roll_deg == pytest.approx(0)
-    assert mapper.map_in_plane_rotation(30).release_roll_deg == pytest.approx(-30)
-    assert mapper.map_in_plane_rotation(-30).release_roll_deg == pytest.approx(30)
-    assert mapper.map_in_plane_rotation(30, pick_roll_deg=720).release_roll_deg == 690
+    assert mapper.map_in_plane_rotation(30).release_roll_deg == pytest.approx(30)
+    assert mapper.map_in_plane_rotation(-30).release_roll_deg == pytest.approx(-30)
+    assert mapper.map_in_plane_rotation(30, pick_roll_deg=720).release_roll_deg == 750
 
 
 def test_sim_is_rejected_and_stm32_requires_port():

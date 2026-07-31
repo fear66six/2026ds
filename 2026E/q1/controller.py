@@ -128,7 +128,7 @@ class Q1Controller:
                 Q1State.EXECUTE_MOVE,
                 move_index,
                 move.template_id,
-                reason="buffer if needed -> pick -> buffer -> release",
+                reason="pick ready -> pick -> lift -> rotate -> transit -> place -> lift",
             )
             self.magnet.ensure_off()
             result = self.robot.execute_single_move(move, self.magnet)

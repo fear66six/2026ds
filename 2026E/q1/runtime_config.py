@@ -18,6 +18,7 @@ class Q1RuntimeConfig:
     vertex_max_error_mm: float = 8.0
     target_origin_mm: tuple[float, float] = (55.0, 168.5)
     target_scale: float = 1.0
+    edge_gap_mm: float = 0.0
     robot_config: Path | None = None
     run_root: Path = Path("output/runs/q1")
     camera_port: str | None = None
@@ -39,8 +40,16 @@ class Q1RuntimeConfig:
     direct_pick_release_pose_verified: bool = False
     pick_height: float | None = None
     release_height: float | None = None
-    buffer_pose: tuple[float, float, float, float, float, float, int] | None = None
-    move_duration_ms: int | None = None
+    pick_robot_xy_offset_mm: tuple[float, float] = (0.0, 0.0)
+    swing_roll_compensate: bool = True
+    swing_roll_sign: float = -1.0
+    transfer_approach_dz_mm: float = 40.0
+    transfer_transit_z: float = 120.0
+    transfer_move_duration_ms: int = 1500
+    transfer_descend_duration_ms: int = 800
+    transfer_lift_duration_ms: int = 800
+    transfer_rotate_duration_ms: int = 1200
+    post_move_settle_ms: int = 200
     magnet_settle_ms: int | None = None
     magnet_release_settle_ms: int | None = None
 
@@ -66,6 +75,16 @@ class Q1RuntimeConfig:
             "direct_pick_release_pose_verified": self.direct_pick_release_pose_verified,
             "motion_calibration_status": self.motion_calibration_status,
             "target_scale": self.target_scale,
+            "edge_gap_mm": self.edge_gap_mm,
+            "swing_roll_compensate": self.swing_roll_compensate,
+            "swing_roll_sign": self.swing_roll_sign,
+            "transfer_approach_dz_mm": self.transfer_approach_dz_mm,
+            "transfer_transit_z": self.transfer_transit_z,
+            "transfer_move_duration_ms": self.transfer_move_duration_ms,
+            "transfer_descend_duration_ms": self.transfer_descend_duration_ms,
+            "transfer_lift_duration_ms": self.transfer_lift_duration_ms,
+            "transfer_rotate_duration_ms": self.transfer_rotate_duration_ms,
+            "post_move_settle_ms": self.post_move_settle_ms,
         }
 
     def real_run_blockers(self) -> list[str]:
@@ -110,8 +129,13 @@ class Q1RuntimeConfig:
         required = {
             "pick_height": self.pick_height,
             "release_height": self.release_height,
-            "buffer_pose": self.buffer_pose,
-            "move_duration_ms": self.move_duration_ms,
+            "transfer_approach_dz_mm": self.transfer_approach_dz_mm,
+            "transfer_transit_z": self.transfer_transit_z,
+            "transfer_move_duration_ms": self.transfer_move_duration_ms,
+            "transfer_descend_duration_ms": self.transfer_descend_duration_ms,
+            "transfer_lift_duration_ms": self.transfer_lift_duration_ms,
+            "transfer_rotate_duration_ms": self.transfer_rotate_duration_ms,
+            "post_move_settle_ms": self.post_move_settle_ms,
             "magnet_settle_ms": self.magnet_settle_ms,
             "magnet_release_settle_ms": self.magnet_release_settle_ms,
             "position_tolerance_mm": self.position_tolerance_mm,
@@ -147,8 +171,13 @@ class Q1RuntimeConfig:
         required = {
             "pick_height": self.pick_height,
             "release_height": self.release_height,
-            "buffer_pose": self.buffer_pose,
-            "move_duration_ms": self.move_duration_ms,
+            "transfer_approach_dz_mm": self.transfer_approach_dz_mm,
+            "transfer_transit_z": self.transfer_transit_z,
+            "transfer_move_duration_ms": self.transfer_move_duration_ms,
+            "transfer_descend_duration_ms": self.transfer_descend_duration_ms,
+            "transfer_lift_duration_ms": self.transfer_lift_duration_ms,
+            "transfer_rotate_duration_ms": self.transfer_rotate_duration_ms,
+            "post_move_settle_ms": self.post_move_settle_ms,
             "vertex_max_error_mm": self.vertex_max_error_mm,
         }
         for name, value in required.items():

@@ -47,7 +47,7 @@ ls -l /dev/serial/by-id/
 ├── q1/                          # 第1问主程序（你主要改这里）
 │   ├── main.py                  # CLI 入口：plan / run
 │   ├── workflow.py              # 拍照 + 识别 + 规划（plan/run 共用）
-│   ├── controller.py            # run：顺序执行 P1..P4 抓放
+│   ├── controller.py            # run：顺序执行 P4→P3→P2→P1 抓放
 │   ├── analyzer.py              # 场景分析（纸面/碎片）
 │   ├── motion.py                # PieceMove 规划、刚体变换
 │   ├── magnet.py                # STM32 磁铁控制器（500ms 租约续租）
@@ -116,7 +116,7 @@ python3 -m q1.main run \
 ```text
 初始化相机 / NexArm / STM32
 → 发 HOME，等 move_duration_ms（当前 6000）
-→ 单次拍照识别，生成 P1..P4 队列
+→ 单次拍照识别，生成 P4→P3→P2→P1 大到小队列
 → 每片：到吸取位 → MAGNET_ON（续租）→ 到释放位 → MAGNET_OFF
 → 队列结束
 ```

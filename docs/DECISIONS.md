@@ -403,3 +403,33 @@
 - 覆盖关系：覆盖 D-004 中“当前板为 C8T6、控制脚 PB12”的现行状态；旧 C8T6/`PB12` 工程仅作历史保留。
 - 适用边界：`STATUS MAGNET` 仍只表示固件 GPIO 锁存；工件吸取/释放与线圈电气额定值继续独立验证。
 - 当前状态：阶段 A/B 已烧录并完成 Jetson 100ms 吸合与自动关闭测试。
+
+## D-045 Q1 使用最大内接吸取点和斜向低位过渡
+
+- 决策：吸取纸面点统一改为检测多边形内离边界最远点；纸面到机械臂映射后只对吸取端增加 `X+5 mm、Y+5 mm`，不修改释放端或全局标定矩阵。
+- 决策：HOME、固定 BUFFER 和工作区当前抓放低位不由本决策改写，运行时直接读取 `robot_config.json::pick_height/release_height`。低位抓放点经 `Z=25 mm、朝 BUFFER 移动 25% XY、1200 ms` 的斜向 clearance 进出，避免新增纯 X/Y/Z 单轴段。吸合后的第一条离地目标直接使用完整 release roll，不下发中间 roll 角。
+- 依据：三次运行 `20260730_232827_207582`、`20260730_233201_481210`、`20260730_233351_970591` 的图像和规划记录（A）；`q1/motion.py`、`q1/executors/nexarm.py`（A）；厂商出厂程序 `Nex_Arm.zip!/Nex_Arm/system_task_handle.cpp::CMD_COORDINATE_SET`（A）；用户现场偏差和触地观察（D）。
+- 当前状态：三张实图离线复算和静态检查通过；未上传 Jetson，未执行机械臂或电磁铁，物理轨迹仍需实机验证。
+
+## D-046 Q1 release roll 叠加基座摆臂方位角补偿
+
+- 决策：纸面刚体变换继续只产生几何 release roll；机械臂命令层另用最终下发的吸取 XY 和释放 XY 计算 `swing=abs(normalize(atan2(place_y,place_x)-atan2(pick_y,pick_x)))`，再按 `final_roll=normalize(geometric_roll+swing_roll_sign*swing)` 得到最终 release roll。当前配置启用补偿并采用 `swing_roll_sign=-1.0`。
+- 决策：吸取端 `X/Y +5 mm` 在摆角计算前生效，释放 XY 和纸面几何不变。最终 roll 同时写入释放位、吸合后的首个斜向离地位和携片 BUFFER，不再让视觉模板或刚体拟合承担机械摆臂误差。
+- 依据：`D:\OIK\Downloads\pintu\jetson_to_nexarm\puzzle_runner.py::smaller_azimuth_angle_deg/swing_roll_compensation_deg/execute_one`、`algorithm/bridge/run_execute.py`、`algorithm/bridge/adapters.py`（A）；`2026E/q1/wrist.py`、`motion.py::plan_single_move`、`executors/nexarm.py::execute_single_move`（A）；用户要求复用 pintu 已表现良好的补偿方向（D）。
+- 离线结果：三组实图共 12 个移动均重新规划成功，摆角范围为 `25.156°..52.757°`。例如运行 `20260730_232827_207582` 的 P3 从几何 `-25.936°` 叠加 `-47.789°`，最终命令为 `-73.725°`。
+- 当前状态：仅本地修改；公式与命令传播已经离线确认，`-1.0` 的真实机械修正方向和最终拼放角仍需实机验证。未连接 NexArm、未通电电磁铁、未修改 STM32。
+
+## D-047 Q1 选择性合并队友 pintu 的规划与机械执行策略
+
+- 决策：正式入口仍保持当前 `q1.main run`，不引入第二套 `bridge.run_execute`、controller、手眼文件或驱动。视觉继续使用当前单帧 A4/白线检测、轮廓精修和最大内接吸取点；当前标定、吸取偏移、HOME、BUFFER、抓放高度、腕部符号和 STM32 会话均保持不变。
+- 采用：模板分配按 `target_scale` 构造特征；`edge_gap_mm=2.0` 使每片相对目标中心径向外移 1 mm；执行顺序改为面积从大到小的 `P4→P3→P2→P1`。吸合后的首个斜向 clearance 继续一次完成最终 roll，当归一化转角超过 90° 时，按 `base_ms*abs(delta)/90` 延长该段，不新增独立旋转动作。
+- 不采用：`pintu` 的纯 Z 抬升、纯 XY 转运、原地旋转和相对 peel 会违反当前机构不能可靠执行单轴轨迹的现场约束；`ArmController` 坐标等待在截止时间后仍继续执行，不能解决当前 NexArm 陈旧反馈问题；`handeye_mine.json` 的偏移、高度、目标原点和腕部符号与当前配置冲突。
+- 依据：`pintu/命令.md`、`algorithm/bridge/run_execute.py`、`algorithm/q1/analyzer.py`、`motion.py`、`pieces.py`、`puzzle_solver.py`、`jetson_to_nexarm/puzzle_runner.py`、`arm_controller.py`（A）；当前 `2026E/q1` 源码和三组实拍离线复算（A）；用户要求以队友实机效果取长补短（D）。
+- 当前状态：三组实拍均保持场景有效并生成 `P4,P3,P2,P1`；每片目标平移量恰为 1 mm。第三组 P1 的最终 roll `-154.003°` 使吸合后斜向段由 `1200 ms` 延长到 `2053 ms`，Mock 执行链确认后续 BUFFER/释放时长不变。仅本地修改，尚未同步 Jetson 或执行硬件。
+
+## D-048 Q1 transfer 主链改为 pintu puzzle_runner 分段轨迹
+
+- 决策：覆盖 D-042、D-045 和 D-047 中固定 BUFFER、斜向 clearance 及“边抬边转”的现行策略。正式入口仍为 `q1.main run`，但单片执行改为 `pick_ready → descend_pick → magnet ON → lift_pick → rotate_in_air → transit_to_place → place_ready → descend_place → magnet OFF → done_lift`。
+- 参数：`approach_dz=40 mm`、`transit_z=120 mm`、move/descend/lift/rotate 基准时长为 `1500/800/800/1200 ms`，每条动作后 settle 为 `200 ms`；独立 roll 小于 `1°` 时跳过，否则按归一化角差缩放旋转时长。HOME、吸放低位、`+5/+5 mm` 吸点修正、摆臂补偿、四片顺序及 STM32 续租保持不变。
+- 依据：`pintu/jetson_to_nexarm/puzzle_runner.py::PuzzlePickPlaceRunner.execute_one,_rotate_duration_ms` 和 `arm_controller.py::_wait_arrival`（A）；当前 `q1/motion.py`、`q1/executors/nexarm.py`（A）；用户要求以队友实机效果更好的 `puzzle_runner.py` 重构 transfer（D）。
+- 验证：三组实拍均完成四片离线规划；Mock 确认非零 roll 单片下发八条 `set_pose`，磁铁严格在 pick 低位后开启、place 低位后关闭。尚未同步 Jetson，尚未执行机械臂或电磁铁。

@@ -12,7 +12,7 @@ from . import config
 from .edge_refinement import refine_polygon_from_contour
 from .geometry import normalize_angle_deg, principal_angle_deg
 from .models import PieceGeometry, PieceTaskStatus, SceneAnalysis, Snapshot, TemplateState
-from .pieces import template_target_vertices_mm
+from .pieces import apply_edge_gap_mm, template_target_vertices_mm
 from .puzzle_solver import TEMPLATE_IDS, assign_templates_global
 from .vision import PaperFrame, cm_to_px, detect_divider_line, detect_paper
 
@@ -149,12 +149,14 @@ class SceneAnalyzer:
         *,
         target_origin_mm: tuple[float, float] = (55.0, 168.5),
         target_scale: float = 1.0,
+        edge_gap_mm: float = 0.0,
         center_tolerance_mm: float = 5.0,
         angle_tolerance_deg: float = 5.0,
         vertex_tolerance_mm: float = 8.0,
     ) -> None:
         self.target_origin_mm = target_origin_mm
         self.target_scale = target_scale
+        self.edge_gap_mm = float(edge_gap_mm)
         self.center_tolerance_mm = center_tolerance_mm
         self.angle_tolerance_deg = angle_tolerance_deg
         self.vertex_tolerance_mm = vertex_tolerance_mm
@@ -180,7 +182,11 @@ class SceneAnalyzer:
                 "template_match_ms": 0.0,
             }
             t = time.perf_counter()
-            assignment = assign_templates_global(pieces, origin_mm=self.target_origin_mm)
+            assignment = assign_templates_global(
+                pieces,
+                origin_mm=self.target_origin_mm,
+                scale=self.target_scale,
+            )
             timings["template_match_ms"] = (time.perf_counter() - t) * 1000.0
             self.last_assignment = assignment
             assignment_margin = assignment.confidence_margin
@@ -343,7 +349,11 @@ class SceneAnalyzer:
             )
         timings["edge_refine_ms"] = (time.perf_counter() - t_edge) * 1000.0
         t = time.perf_counter()
-        assignment = assign_templates_global(candidates, origin_mm=self.target_origin_mm)
+        assignment = assign_templates_global(
+            candidates,
+            origin_mm=self.target_origin_mm,
+            scale=self.target_scale,
+        )
         timings["template_match_ms"] = (time.perf_counter() - t) * 1000.0
         if assignment.accepted:
             pieces = list(assignment.assignments.values())
@@ -354,13 +364,23 @@ class SceneAnalyzer:
 
     def _classify_templates(self, pieces: list[PieceGeometry], cycle_index: int) -> dict[str, TemplateState]:
         by_template = {piece.template_id: piece for piece in pieces if piece.template_id in TEMPLATE_IDS}
-        states: dict[str, TemplateState] = {}
-        for index, template_id in enumerate(TEMPLATE_IDS):
-            expected = template_target_vertices_mm(
+        expected_by_id = {
+            template_id: template_target_vertices_mm(
                 index,
                 self.target_origin_mm,
                 self.target_scale,
             )
+            for index, template_id in enumerate(TEMPLATE_IDS)
+        }
+        expected_by_id = apply_edge_gap_mm(
+            expected_by_id,
+            self.edge_gap_mm,
+            origin_mm=self.target_origin_mm,
+            scale=self.target_scale,
+        )
+        states: dict[str, TemplateState] = {}
+        for template_id in TEMPLATE_IDS:
+            expected = expected_by_id[template_id]
             piece = by_template.get(template_id)
             if piece is None:
                 states[template_id] = TemplateState(

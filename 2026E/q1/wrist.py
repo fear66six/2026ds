@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 
@@ -16,7 +17,34 @@ class WristRotationResult:
 
 
 def normalize_angle_deg(angle: float) -> float:
-    return float(((angle + 180.0) % 360.0) - 180.0)
+    normalized = float(((angle + 180.0) % 360.0) - 180.0)
+    return 180.0 if normalized == -180.0 else normalized
+
+
+def smaller_azimuth_angle_deg(
+    x0: float,
+    y0: float,
+    x1: float,
+    y1: float,
+) -> float:
+    azimuth0 = math.degrees(math.atan2(float(y0), float(x0)))
+    azimuth1 = math.degrees(math.atan2(float(y1), float(x1)))
+    return abs(normalize_angle_deg(azimuth1 - azimuth0))
+
+
+def swing_roll_compensation_deg(
+    pick_xy: tuple[float, float],
+    release_xy: tuple[float, float],
+    *,
+    sign: float = -1.0,
+) -> float:
+    swing = smaller_azimuth_angle_deg(
+        pick_xy[0],
+        pick_xy[1],
+        release_xy[0],
+        release_xy[1],
+    )
+    return float(sign) * swing
 
 
 def choose_wrist_release_roll(

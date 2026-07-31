@@ -201,7 +201,7 @@ rigid_placement_transform(当前顶点_mm, 目标模板顶点_mm)
 |---|---|
 | `capture.png` | 本次唯一生产输入图像 |
 | `scene.json` | 各片 `center_mm`、`vertices_mm`、误差 |
-| `piece_moves.json` | P1..P4 队列、源/目标纸面与机器人位姿 |
+| `piece_moves.json` | P4→P3→P2→P1 大到小队列、源/目标纸面与机器人位姿 |
 | `moves/*.json` | 每片命令与执行结果 |
 | `final.json` / `failure.json` | 汇总或停止原因 |
 

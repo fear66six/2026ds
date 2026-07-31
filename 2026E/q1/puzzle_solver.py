@@ -64,7 +64,7 @@ class _TemplateFeatures:
     target_center_mm: np.ndarray
 
 
-_FEATURE_CACHE: dict[tuple[float, float], dict[str, _TemplateFeatures]] = {}
+_FEATURE_CACHE: dict[tuple[float, float, float], dict[str, _TemplateFeatures]] = {}
 
 
 def template_world_vertices(tpl: PieceTemplate, target_origin: tuple[float, float]) -> np.ndarray:
@@ -99,15 +99,18 @@ def _cyclic_l1(a: np.ndarray, b: np.ndarray) -> float:
     return best
 
 
-def _get_template_features(origin_mm: tuple[float, float]) -> dict[str, _TemplateFeatures]:
-    key = (float(origin_mm[0]), float(origin_mm[1]))
+def _get_template_features(
+    origin_mm: tuple[float, float],
+    scale: float = 1.0,
+) -> dict[str, _TemplateFeatures]:
+    key = (float(origin_mm[0]), float(origin_mm[1]), float(scale))
     cached = _FEATURE_CACHE.get(key)
     if cached is not None:
         return cached
     features: dict[str, _TemplateFeatures] = {}
     for index, tpl in enumerate(PIECE_TEMPLATES):
         tid = f"P{index + 1}"
-        verts = template_target_vertices_mm(index, origin_mm)
+        verts = template_target_vertices_mm(index, origin_mm, scale)
         area = float(abs(_polygon_area(verts)))
         peri = float(np.sum(np.linalg.norm(np.roll(verts, -1, axis=0) - verts, axis=1)))
         hull = verts  # templates are convex by construction
@@ -177,13 +180,14 @@ def assign_templates_global(
     candidates: list[PieceGeometry],
     *,
     origin_mm: tuple[float, float],
+    scale: float = 1.0,
     max_cost: float | None = None,
     min_margin: float | None = None,
 ) -> TemplateAssignmentResult:
     """对 N 个候选枚举 C(N,4)×4!，选择全局最优模板分配。"""
     max_cost = config.MAX_GLOBAL_ASSIGNMENT_COST if max_cost is None else max_cost
     min_margin = config.MIN_ASSIGNMENT_MARGIN if min_margin is None else min_margin
-    features = _get_template_features(origin_mm)
+    features = _get_template_features(origin_mm, scale)
     template_ids = list(TEMPLATE_IDS)
     n = len(candidates)
     empty = TemplateAssignmentResult(

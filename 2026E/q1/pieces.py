@@ -171,6 +171,35 @@ def template_target_vertices_mm(
     return vertices
 
 
+def apply_edge_gap_mm(
+    vertices_by_id: dict[str, np.ndarray],
+    gap_mm: float,
+    *,
+    origin_mm: tuple[float, float],
+    scale: float = 1.0,
+) -> dict[str, np.ndarray]:
+    if float(gap_mm) <= 0.0:
+        return {
+            key: np.asarray(value, dtype=np.float64).copy()
+            for key, value in vertices_by_id.items()
+        }
+
+    origin = np.asarray(origin_mm, dtype=np.float64)
+    target_center = origin + 0.5 * float(scale) * np.array(
+        [TARGET_RECT_WIDTH_MM, TARGET_RECT_HEIGHT_MM], dtype=np.float64
+    )
+    half_gap = float(gap_mm) * 0.5
+    shifted: dict[str, np.ndarray] = {}
+    for template_id, vertices in vertices_by_id.items():
+        points = np.asarray(vertices, dtype=np.float64).reshape(-1, 2).copy()
+        direction = points.mean(axis=0) - target_center
+        norm = float(np.linalg.norm(direction))
+        shifted[template_id] = (
+            points if norm < 1e-6 else points + direction * (half_gap / norm)
+        )
+    return shifted
+
+
 def _point_on_segment(p: Point, a: Point, b: Point, tol: float = 0.05) -> bool:
     ax, ay = a
     bx, by = b

@@ -276,6 +276,14 @@
 - 工程边界：不能从单次视觉测量区分实物制作尺寸偏差与轮廓测量系统误差；比例只适用于当前固定四片，不适用于现场未知碎片。
 - 最后核查时间：2026-07-31。
 
+## F-035 三次运行的 P4 原吸取中心贴近拟合边界
+
+- 结论：运行 `20260730_232827_207582`、`20260730_233201_481210`、`20260730_233351_970591` 中，P4 旧 `center_mm` 到拟合三角形边界的距离分别约为 `1.19 mm`、`0.45 mm`、`2.12 mm`。改用最大内接点后分别约为 `20.35 mm`、`19.77 mm`、`20.48 mm`。
+- 离线复算：三次图像均保持 `paper_valid=true`、`scene_valid=true` 和四片规划成功；P1-P4 的边界余量均增加。所有低位 clearance 相邻段同时改变 X/Y/Z，吸合后的首个目标使用完整 release roll。
+- 来源：三份运行目录中的 `capture.png`、`scene.json`、`piece_moves.json`、`moves/*.json`；`2026E/q1/geometry.py::polygon_maximum_clearance_point`、`motion.py::plan_single_move`、`executors/nexarm.py::execute_single_move`；当前源码离线执行。
+- 可信等级：A（图像、JSON、源码和离线复算）+ D（`X/Y +5 mm` 与触地现场观察）；是否需要实机验证：需要，新的吸取位置、clearance 轨迹和 roll 时序尚未在 NexArm 上执行。
+- 最后核查时间：2026-07-31。
+
 ## F-032 成功全流程的低位直达搬运存在现场下沉现象
 
 - 结论：运行 `20260730_215916_405845` 成功完成一次识别、四片规划和全部命令时长；四片吸取与释放命令的 Z 均为 `-15`，旧执行器在磁铁吸合后只发送一条从吸取点到释放点的 6000 ms 位姿。日志没有运动中连续的新鲜坐标，不能从记录证明实际 Z 曲线；用户现场观察到到达 `-15` 后搬运前半段继续降低。
@@ -339,4 +347,29 @@
 - 后续实测：运行 `20260730_224434_329023` 仍从 `CMD_GET_CUR_COORDS` 读取附带脉冲，程序停在 `MOVE_TO_OBSERVE`；约 25 秒后用户以 `Ctrl+C` 中断，`failure.json` 为 `KeyboardInterrupt`，未进入 `INITIALIZE_CAMERA`，因此不是拍照卡住。生产闭环随后改用此前只读报告已成功返回的 `CMD_GET_REAL_JOINT_ANGLES`。
 - 再次实测：运行 `20260730_230752_091605` 改用真实关节读取后仍停在 `MOVE_TO_OBSERVE`，约 39 秒后由用户中断；报告只有 IK 目标脉冲 `[2048,2068,2045,3089,2048,2048]`，没有任何实际关节样本，也未进入相机初始化。D-044 因此恢复成功版本的动作时长推进，并统一增加 1 秒机械稳定等待。
 - 可信等级：A（命令、回包和失败阶段）+ D（实体 HOME 到位）；是否需要实机验证：需要，目标关节闭环尚未同步 Jetson 执行。
+- 最后核查时间：2026-07-31。
+
+## F-036 pintu 的 release roll 包含基座摆臂方位角补偿
+
+- 来源确认事实：`D:\OIK\Downloads\pintu\jetson_to_nexarm\puzzle_runner.py` 第 31–57 行以吸取/释放机器人 XY 的 `atan2` 方位差计算较小夹角，并乘配置符号；第 165–174 行把补偿叠加到几何 place roll 后归一化；第 245–268 行在空中旋转和转运阶段使用该最终角。`algorithm/bridge/run_execute.py` 第 405–415 行默认启用并取 `swing_roll_sign=-1.0`。
+- Q1 实现事实：`q1/motion.py::plan_single_move` 在吸取端 `+5/+5 mm` 修正后，用最终命令 XY 计算摆角；`release_roll_deg` 表示归一化后的最终命令，规划 JSON 另存 `geometric_release_roll_deg`、`swing_azimuth_deg` 和 `swing_roll_compensation_deg`。`q1/executors/nexarm.py::execute_single_move` 先以 pick roll 抬到 `Z=120`，再在吸点上空独立转到最终 release roll，并在同高转运和释放阶段保持该角度。
+- 离线复算：运行 `20260730_232827_207582`、`20260730_233201_481210`、`20260730_233351_970591` 均保持 `paper_valid=true`、`scene_valid=true` 和 P1–P4 四片规划成功；12 个摆角为 `25.156°..52.757°`。
+- 可信等级：A（pintu/Q1 源码和三组实图离线执行）+ D（采用 `-1.0` 作为当前实机方向决策）；是否需要实机验证：需要，公式已确认但物理修正符号和释放角精度尚未由真实拼放结果确认。
+- 最后核查时间：2026-07-31。
+
+## F-037 队友 pintu 与当前 Q1 的可复用差异已完成源码对照
+
+- 相同部分：`pintu/algorithm/q1` 与当前 Q1 的 `vision.py`、`white_segmentation.py`、`edge_refinement.py` SHA256 分别相同，因此没有证据支持替换当前视觉主链路。当前 Q1 另外保留最大内接吸取点和已完成的残缺 A4 适配。
+- 可复用部分：`pintu/algorithm/q1/puzzle_solver.py` 按 `target_scale` 构造模板特征；`pieces.py::apply_edge_gap_mm` 将每片向目标中心外移动 `gap/2`；`motion.py` 使用 `P4,P3,P2,P1` 大到小顺序；`puzzle_runner.py::_rotate_duration_ms` 按 roll 角度比例分配旋转时间。
+- 执行层复用边界：用户后续以队友实机效果为依据，明确要求采用 `puzzle_runner.py::execute_one` 的分段 transfer，因此当前 Q1 已复用纯 Z 抬升、`Z=120` 同高转运和吸点上空独立 roll；仍不采用可选相对 X peel，也不采用 `arm_controller.py` 的坐标轮询。
+- 当前合并结果：生产配置采用 `edge_gap_mm=2.0`，模板分配使用 `target_scale=1.03`，队列为 `P4→P3→P2→P1`。单片顺序为 pick-ready → descend → magnet ON → lift → rotate → transit → place-ready → descend → magnet OFF → done-lift；时长采用 `1500/800/800/1200 ms` 基准和 `200 ms` settle。三组实拍全部规划成功，Mock 确认非零 roll 单片共下发八条 `set_pose`，磁铁切换位于两个低位动作之后。
+- 可信等级：A（两套源码、哈希、三组实图离线执行与 Mock 轨迹）+ D（队友实机效果与合并策略）；是否需要实机验证：需要。
+- 最后核查时间：2026-07-31。
+
+## F-038 当前 Q1 transfer 已对齐 pintu 的实际主执行链
+
+- 来源确认事实：`pintu/jetson_to_nexarm/puzzle_runner.py::PuzzlePickPlaceRunner.execute_one` 的实际顺序为 pick-ready、descend-pick、magnet ON、lift、rotate-in-air、transit、place-ready、descend-place、magnet OFF、done-lift；默认 approach 为 40 mm、transit Z 为 120 mm，move/descend/lift/rotate 基准时长为 `1500/800/800/1200 ms`，settle 为 200 ms。旋转小于 1° 时跳过，其他角度按 `max(400, base*max(0.5, abs(delta)/90))` 分配时长。
+- Q1 实现事实：`q1/motion.py::plan_single_move` 生成 pick-ready、rotate 和 transit 位姿；`q1/executors/nexarm.py::execute_single_move` 直接执行上述顺序。固定 BUFFER、25% XY 斜向 clearance 和每段 1 秒 settle 已从生产链移除。
+- 离线结果：三组实拍 `20260730_232827_207582`、`20260730_233201_481210`、`20260730_233351_970591` 均保持 `scene_valid=true` 并生成 `P4→P3→P2→P1`。Mock 非零 roll 单片下发八条 `set_pose`，事件顺序确认磁铁在吸取低位完成后开启、释放低位完成后关闭。
+- 可信等级：A（pintu/Q1 源码、实图离线规划和 Mock）+ D（采用队友轨迹作为当前项目决策）；是否需要实机验证：需要，尚未连接 NexArm、未给电磁铁通电、未同步 Jetson。
 - 最后核查时间：2026-07-31。

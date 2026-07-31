@@ -1,0 +1,17 @@
+---
+description: pintu/ is an immutable external reference; never edit or commit it
+alwaysApply: true
+---
+
+# pintu 只读参考，禁止改动
+
+仓库根目录下的 `pintu/`（以及用户本机的 `D:\OIK\Downloads\pintu` 同类副本）是外部参考工程。
+
+硬性约束：
+
+- **永远不要**创建、修改、删除、重命名、移动或格式化 `pintu/` 内任何文件
+- **永远不要**对 `pintu/` 做 git add / commit / 同步到 Jetson
+- 需要借鉴其算法时：只允许只读阅读，再把改动实现到 `2026E/`（或其它本仓库正式目录）
+- 若用户要求“改 pintu”，应拒绝并改为在正式工程目录实现等价改动
+
+`pintu/` 已写入 `.gitignore` 与 `.cursorignore`。

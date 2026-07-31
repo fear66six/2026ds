@@ -6,7 +6,12 @@ import numpy as np
 
 from .calibration import ArmCoordinateMapper
 from .config import DIVIDER_Y_CM
-from .geometry import apply_rigid_transform, compute_rigid_transform, normalize_angle_deg
+from .geometry import (
+    apply_rigid_transform,
+    compute_rigid_transform,
+    normalize_angle_deg,
+    polygon_maximum_clearance_point,
+)
 from .models import (
     PaperPose,
     PieceMove,
@@ -17,6 +22,14 @@ from .models import (
 )
 from .puzzle_solver import TEMPLATE_IDS
 from .runtime_config import Q1RuntimeConfig
+from .wrist import (
+    normalize_angle_deg as normalize_roll_command_deg,
+    smaller_azimuth_angle_deg,
+    swing_roll_compensation_deg,
+)
+
+
+PLACE_ORDER = ("P4", "P3", "P2", "P1")
 
 
 def plan_single_move(
@@ -52,7 +65,7 @@ def plan_single_move(
             f"limit_mm={float(config.vertex_max_error_mm):.3f}"
         )
 
-    pick_point_source_mm = np.asarray(piece.center_mm, dtype=np.float64)
+    pick_point_source_mm = polygon_maximum_clearance_point(piece.vertices_mm)
     release_point_target_mm = apply_rigid_transform(pick_point_source_mm, transform)
     rotation_delta_deg = normalize_angle_deg(transform.rotation_deg)
 
@@ -71,17 +84,18 @@ def plan_single_move(
     source_robot = target_robot = pick_robot = release = None
     approach = transfer = rotate_pose = None
     pick_roll_deg = release_roll_deg = None
+    geometric_release_roll_deg = swing_azimuth_deg = swing_compensation_deg = None
     if mapper.is_calibrated():
         if None in (
             config.pick_height,
             config.release_height,
-            config.buffer_pose,
-            config.move_duration_ms,
+            config.transfer_transit_z,
+            config.transfer_move_duration_ms,
         ):
-            raise RuntimeError("CALIBRATION_REQUIRED: 缺少抓取/释放/缓冲位姿或动作时间")
+            raise RuntimeError("CALIBRATION_REQUIRED: 缺少抓取/释放高度或 transfer 参数")
         wrist = mapper.map_in_plane_rotation(rotation_delta_deg)
         pick_roll_deg = float(wrist.pick_roll_deg)
-        release_roll_deg = float(wrist.release_roll_deg)
+        geometric_release_roll_deg = float(wrist.release_roll_deg)
 
         source_robot = mapper.paper_to_robot(
             source.x_mm,
@@ -89,15 +103,73 @@ def plan_single_move(
             float(config.pick_height),
             roll_deg=pick_roll_deg,
         )
+        source_robot.x += float(config.pick_robot_xy_offset_mm[0])
+        source_robot.y += float(config.pick_robot_xy_offset_mm[1])
         pick_robot = source_robot
         target_robot = mapper.paper_to_robot(
-            target.x_mm, target.y_mm, float(config.release_height), roll_deg=release_roll_deg
+            target.x_mm,
+            target.y_mm,
+            float(config.release_height),
+            roll_deg=geometric_release_roll_deg,
         )
+        swing_azimuth_deg = smaller_azimuth_angle_deg(
+            source_robot.x,
+            source_robot.y,
+            target_robot.x,
+            target_robot.y,
+        )
+        swing_compensation_deg = 0.0
+        if config.swing_roll_compensate:
+            swing_compensation_deg = swing_roll_compensation_deg(
+                (source_robot.x, source_robot.y),
+                (target_robot.x, target_robot.y),
+                sign=float(config.swing_roll_sign),
+            )
+        release_roll_deg = normalize_roll_command_deg(
+            geometric_release_roll_deg + swing_compensation_deg
+        )
+        target_robot.roll = release_roll_deg
         release = target_robot
-        source_robot.duration_ms = int(config.move_duration_ms)
+        source_robot.duration_ms = int(config.transfer_descend_duration_ms)
+        target_robot.duration_ms = int(config.transfer_descend_duration_ms)
 
-        target_robot.duration_ms = int(config.move_duration_ms)
-        transfer = RobotPose(*config.buffer_pose)
+        approach = RobotPose(
+            source_robot.x,
+            source_robot.y,
+            source_robot.z + float(config.transfer_approach_dz_mm),
+            source_robot.pitch,
+            source_robot.roll,
+            source_robot.claw,
+            int(config.transfer_move_duration_ms),
+        )
+        roll_delta_deg = normalize_roll_command_deg(
+            release_roll_deg - pick_roll_deg
+        )
+        rotate_duration_ms = max(
+            400,
+            int(
+                int(config.transfer_rotate_duration_ms)
+                * max(0.5, abs(roll_delta_deg) / 90.0)
+            ),
+        )
+        rotate_pose = RobotPose(
+            source_robot.x,
+            source_robot.y,
+            float(config.transfer_transit_z),
+            target_robot.pitch,
+            release_roll_deg,
+            source_robot.claw,
+            rotate_duration_ms,
+        )
+        transfer = RobotPose(
+            target_robot.x,
+            target_robot.y,
+            float(config.transfer_transit_z),
+            target_robot.pitch,
+            release_roll_deg,
+            target_robot.claw,
+            int(config.transfer_move_duration_ms),
+        )
 
     return SingleMovePlan(
         cycle_index=scene.cycle_index,
@@ -122,6 +194,9 @@ def plan_single_move(
         release_point_target_mm=release_point_target_mm,
         pick_roll_deg=pick_roll_deg,
         release_roll_deg=release_roll_deg,
+        geometric_release_roll_deg=geometric_release_roll_deg,
+        swing_azimuth_deg=swing_azimuth_deg,
+        swing_roll_compensation_deg=swing_compensation_deg,
         rotate_pose=rotate_pose,
     )
 
@@ -131,12 +206,12 @@ def plan_piece_moves(
     mapper: ArmCoordinateMapper,
     config: Q1RuntimeConfig,
 ) -> list[PieceMove]:
-    """Build the complete P1..P4 queue from the single initial observation."""
+    """Build one large-to-small queue from the single initial observation."""
     if not scene.scene_valid:
         raise RuntimeError("PLAN_FAILED: initial scene is invalid")
 
     moves: list[PieceMove] = []
-    for template_id in TEMPLATE_IDS:
+    for template_id in PLACE_ORDER:
         state = scene.templates.get(template_id)
         if state is None:
             raise RuntimeError(f"PLAN_FAILED: missing template state {template_id}")
@@ -158,7 +233,7 @@ def plan_piece_moves(
             template_id,
             mapper,
             config,
-            reason_selected="INITIAL_SCENE_P1_TO_P4_QUEUE",
+            reason_selected="INITIAL_SCENE_LARGE_TO_SMALL_QUEUE",
         )
         move.cycle_index = len(moves)
         moves.append(move)

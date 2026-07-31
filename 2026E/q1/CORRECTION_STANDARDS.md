@@ -47,7 +47,7 @@
 
 1. 用实拍图确认 A4、分界线和四片一一匹配。
 2. 检查 `scene.json` 的区域、顶点和匹配置信度。
-3. 检查 `piece_moves.json` 的 P1..P4 顺序、刚体残差和纸面坐标。
+3. 检查 `piece_moves.json` 的 P4→P3→P2→P1 顺序、刚体残差和纸面坐标。
 4. 核对纸面到机械臂矩阵与腕部方向。
 5. V-013 已由用户实机确认完成；当前
    `direct_pick_release_pose_verified=true`。变更高度或六维目标后重新验证。

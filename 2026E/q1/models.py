@@ -126,6 +126,9 @@ class SingleMovePlan:
     release_point_target_mm: np.ndarray | None = None
     pick_roll_deg: float | None = None
     release_roll_deg: float | None = None
+    geometric_release_roll_deg: float | None = None
+    swing_azimuth_deg: float | None = None
+    swing_roll_compensation_deg: float | None = None
     rotate_pose: RobotPose | None = None
 
 

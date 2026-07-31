@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Tuple
 
+import cv2
 import numpy as np
 
 Point = Tuple[float, float]
@@ -57,6 +58,31 @@ def resample_polygon(vertices: np.ndarray, n: int = 64) -> np.ndarray:
 def polygon_centroid(vertices: np.ndarray) -> Tuple[float, float]:
     pts = np.asarray(vertices, dtype=np.float64).reshape(-1, 2)
     return float(pts[:, 0].mean()), float(pts[:, 1].mean())
+
+
+def polygon_maximum_clearance_point(
+    vertices_mm: np.ndarray,
+    resolution_mm: float = 0.25,
+) -> np.ndarray:
+    """Return the interior point farthest from the polygon boundary."""
+    points = np.asarray(vertices_mm, dtype=np.float64).reshape(-1, 2)
+    if len(points) < 3:
+        raise ValueError("polygon requires at least three vertices")
+
+    minimum = points.min(axis=0)
+    span = points.max(axis=0) - minimum
+    padding = 4
+    width = int(np.ceil(span[0] / resolution_mm)) + padding * 2 + 1
+    height = int(np.ceil(span[1] / resolution_mm)) + padding * 2 + 1
+    polygon_px = np.rint((points - minimum) / resolution_mm).astype(np.int32)
+    polygon_px += padding
+
+    mask = np.zeros((height, width), dtype=np.uint8)
+    cv2.fillPoly(mask, [polygon_px.reshape(-1, 1, 2)], 255)
+    distance = cv2.distanceTransform(mask, cv2.DIST_L2, 5)
+    _, _, _, maximum_location = cv2.minMaxLoc(distance)
+    location = np.asarray(maximum_location, dtype=np.float64) - padding
+    return minimum + location * resolution_mm
 
 
 def procrustes_rotation_no_flip(src0: np.ndarray, dst0: np.ndarray) -> np.ndarray:

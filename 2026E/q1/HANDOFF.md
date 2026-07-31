@@ -208,18 +208,19 @@ A4 四角像素由初始桌面图像的 `detect_paper` 自动检测，不再使�
 `paper_calibration.json`。主流程为：
 
 ```text
-初始化相机 → 初始化 NexArm → 初始化 STM32
-→ 发送 HOME/观察位并等待配置动作时长
+初始化 NexArm → 发送 HOME/观察位并等待配置动作时长
+→ 初始化相机 → 初始化 STM32
 → 单次拍照、识别、拼图求解
-→ 一次生成 P1..P4 PieceMove 队列
+→ 一次生成 P4→P3→P2→P1 大到小 PieceMove 队列
 → 逐项执行吸取、吸合、搬运、释放
 → 队列耗尽
 ```
 
 每个 `PieceMove` 仍由完整刚体变换生成源/目标位置和腕部角度；执行器只发送
-已配置的完整六维 `set_pose` 目标。源位姿的配置动作时长结束后磁铁 ON，目标
-位姿的配置动作时长结束后磁铁 OFF。STM32 续租失败、磁铁状态异常或命令异常
-仍会停止队列并关闭电磁铁。
+已配置的完整六维 `set_pose` 目标。单片 transfer 为 `pick-ready → descend →
+magnet ON → lift to Z120 → rotate in air → transit at Z120 → place-ready →
+descend → magnet OFF → lift to Z120`。源/目标低位动作结束后才切换磁铁；
+STM32 续租失败、磁铁状态异常或命令异常仍会停止队列并关闭电磁铁。
 
 生产 Q1 固定使用 STM32；不写 `--magnet-backend` 时默认也是 `stm32`，传入
 `sim` 会直接拒绝。STM32 使用 500 ms 看门狗租约，搬运期间每 250 ms 续租。

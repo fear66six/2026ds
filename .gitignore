@@ -1,6 +1,9 @@
 # Generated document-search cache
 /.cache/
 
+# External reference tree: never commit; treat as immutable (read-only)
+/pintu/
+
 # Local vendor/reference archive (large, immutable, and redistributability varies)
 /docs/**
 !/docs/README.md

@@ -96,7 +96,15 @@ def _apply_robot_fields(config: Q1RuntimeConfig, data: dict) -> None:
         "physical_pick_enabled",
         "pick_height",
         "release_height",
-        "move_duration_ms",
+        "swing_roll_compensate",
+        "swing_roll_sign",
+        "transfer_approach_dz_mm",
+        "transfer_transit_z",
+        "transfer_move_duration_ms",
+        "transfer_descend_duration_ms",
+        "transfer_lift_duration_ms",
+        "transfer_rotate_duration_ms",
+        "post_move_settle_ms",
         "magnet_settle_ms",
         "magnet_release_settle_ms",
         "magnet_lease_ms",
@@ -104,6 +112,7 @@ def _apply_robot_fields(config: Q1RuntimeConfig, data: dict) -> None:
         "orientation_tolerance_deg",
         "vertex_max_error_mm",
         "target_scale",
+        "edge_gap_mm",
     )
     for key in keys:
         if key in data and data[key] is not None:
@@ -122,18 +131,17 @@ def _apply_robot_fields(config: Q1RuntimeConfig, data: dict) -> None:
             raise ValueError("target_origin_mm must have 2 numbers")
         config.target_origin_mm = (origin[0], origin[1])
 
-    raw_buffer = data.get("buffer_pose")
-    if raw_buffer is not None:
-        values = [float(value) for value in raw_buffer]
-        if len(values) != 7:
-            raise ValueError("buffer_pose must have 7 numbers")
-        config.buffer_pose = (*values[:6], int(values[6]))
+    if "pick_robot_xy_offset_mm" in data:
+        offset = [float(value) for value in data["pick_robot_xy_offset_mm"]]
+        if len(offset) != 2:
+            raise ValueError("pick_robot_xy_offset_mm must have 2 numbers")
+        config.pick_robot_xy_offset_mm = (offset[0], offset[1])
 
     raw_home = data.get("home_pose")
     if raw_home is not None:
         values = [float(value) for value in raw_home]
         if len(values) == 6:
-            values.append(int(config.move_duration_ms or 6000))
+            values.append(3000)
         elif len(values) != 7:
             raise ValueError("home_pose must have 6 or 7 numbers")
         config.observe_pose = tuple(values)
@@ -166,6 +174,7 @@ def _build_analyzer(config: Q1RuntimeConfig) -> SceneAnalyzer:
     return SceneAnalyzer(
         target_origin_mm=config.target_origin_mm,
         target_scale=config.target_scale,
+        edge_gap_mm=config.edge_gap_mm,
         center_tolerance_mm=config.place_center_tolerance_mm,
         angle_tolerance_deg=config.place_angle_tolerance_deg,
         vertex_tolerance_mm=config.vertex_max_error_mm,
