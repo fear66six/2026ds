@@ -4,7 +4,8 @@
 
 | 文档 | 用途 |
 |---|---|
-| [HANDOFF.md](HANDOFF.md) | 本地 ↔ Jetson 路径映射与同步规则（队友/AI 接手先看） |
+| [TEAMMATE_HANDOFF.md](TEAMMATE_HANDOFF.md) | **队友微调交接**：Jetson 路径、目录结构、入口命令、调哪里 |
+| [HANDOFF.md](HANDOFF.md) | 本地 ↔ Jetson 同步规则与更长状态记录（AI/深入接手） |
 | [COORDINATE_FRAMES.md](COORDINATE_FRAMES.md) | 参考坐标系、单位换算、标定 JSON、姿态映射 |
 | [CORRECTION_STANDARDS.md](CORRECTION_STANDARDS.md) | 单次识别、队列规划门限与检查顺序 |
 | [examples/](examples/) | 标定与安全参数 JSON 模板（数值须实机替换） |
@@ -55,6 +56,11 @@ A4 四角由本次桌面图像的 `detect_paper` 自动检测。`plan` 的时间
 原图 `capture.png`、规划叠加图 `plan.png`、`scene.json` 和
 `piece_moves.json`，不生成 raw/scene/rectified/overlay/debug 图片树。机械臂与纸面映射参数只放在
 `q1/config/robot_config.json`。
+
+自备四片仍使用赛题图 2 的 100×60 mm 原始模板。当前固定实物根据运行
+`20260731_012300_357937` 的四片检测面积配置 `target_scale=1.03`，实际规划
+外包框约为 103×61.8 mm；目标原点 `(53.5,191.85) mm` 使其中心与 A4
+下半区中心 `(105,222.75) mm` 重合。该比例只用于这套 Q1 四片。
 
 Jetson Python 依赖列在 `requirements-q1.txt`：`numpy`、`cv2` 和 `pyserial`。
 部署后可先做不访问设备的导入检查：

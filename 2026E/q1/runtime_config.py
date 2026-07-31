@@ -17,6 +17,7 @@ class Q1RuntimeConfig:
     place_angle_tolerance_deg: float = 5.0
     vertex_max_error_mm: float = 8.0
     target_origin_mm: tuple[float, float] = (55.0, 168.5)
+    target_scale: float = 1.0
     robot_config: Path | None = None
     run_root: Path = Path("output/runs/q1")
     camera_port: str | None = None
@@ -64,6 +65,7 @@ class Q1RuntimeConfig:
             "physical_pick_verified": self.physical_pick_verified,
             "direct_pick_release_pose_verified": self.direct_pick_release_pose_verified,
             "motion_calibration_status": self.motion_calibration_status,
+            "target_scale": self.target_scale,
         }
 
     def real_run_blockers(self) -> list[str]:

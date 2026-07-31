@@ -148,11 +148,13 @@ class SceneAnalyzer:
         self,
         *,
         target_origin_mm: tuple[float, float] = (55.0, 168.5),
+        target_scale: float = 1.0,
         center_tolerance_mm: float = 5.0,
         angle_tolerance_deg: float = 5.0,
         vertex_tolerance_mm: float = 8.0,
     ) -> None:
         self.target_origin_mm = target_origin_mm
+        self.target_scale = target_scale
         self.center_tolerance_mm = center_tolerance_mm
         self.angle_tolerance_deg = angle_tolerance_deg
         self.vertex_tolerance_mm = vertex_tolerance_mm
@@ -354,7 +356,11 @@ class SceneAnalyzer:
         by_template = {piece.template_id: piece for piece in pieces if piece.template_id in TEMPLATE_IDS}
         states: dict[str, TemplateState] = {}
         for index, template_id in enumerate(TEMPLATE_IDS):
-            expected = template_target_vertices_mm(index, self.target_origin_mm)
+            expected = template_target_vertices_mm(
+                index,
+                self.target_origin_mm,
+                self.target_scale,
+            )
             piece = by_template.get(template_id)
             if piece is None:
                 states[template_id] = TemplateState(

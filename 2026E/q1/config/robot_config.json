@@ -6,8 +6,8 @@
   "magnet_backend": "stm32",
   "home_pose": [175.0, 0.0, 210.0, -90.0, 0.0, 0.0],
   "paper_to_robot_matrix": [
-    [0.9523809523809523, 0.0, 173.0],
-    [0.0, -0.9764309764309764, 145.0],
+    [-0.01904761904761905, -0.6498316498316498, 339.5],
+    [-1.330952380952381, 0.0016835016835016835, 143.25],
     [0.0, 0.0, 1.0]
   ],
   "wrist_roll_zero_deg": 0.0,
@@ -17,14 +17,16 @@
   "motion_mode": "direct_pose",
   "direct_pick_release_pose_verified": true,
   "motion_calibration_status": "USER_VERIFIED_Z15_2026-07-30: operator confirms complete direct pick and release XY/Z/Pitch/Roll poses reached",
-  "pick_height": 15.0,
-  "release_height": 15.0,
+  "pick_height": -15.0,
+  "release_height": -15.0,
   "move_duration_ms": 6000,
   "position_tolerance_mm": 10.0,
   "orientation_tolerance_deg": 3.0,
   "stable_samples": 3,
   "motion_timeout_s": 12.0,
   "vertex_max_error_mm": 8.0,
+  "target_scale": 1.03,
+  "target_origin_mm": [53.5, 191.85],
   "magnet_settle_ms": 200,
   "magnet_release_settle_ms": 200,
   "magnet_lease_ms": 500,
@@ -34,11 +36,12 @@
   "sources": {
     "home_pose": "User selected project HOME [175,0,210,-90,0,0] on 2026-07-30 so the camera can include the complete paper. Motion duration remains the separate move_duration_ms=6000 setting. This configuration change is not itself proof of physical arrival.",
     "position_tolerance_mm": "User approved 10 mm after repeat stable feedback [168,5,219,-86.7,0,0] produced 8.66 mm position error",
-    "paper_to_robot_matrix": "X mapping retained; robot Y sign reversed after run 20260729_130634_457875 showed source-half negative Y moved physically right while the source pieces are left",
+    "paper_to_robot_matrix": "Fitted 2026-07-31 from user-measured A4 corners in robot XY: TL(0,0)->(336,141), TR(210,0)->(339,-134), BL(0,297)->(150,146), BR(210,297)->(139,-138). Affine least-squares residual about 4.16 mm RMS.",
     "wrist": "User: zero initial roll, clockwise positive, counter-clockwise negative. Software roll range limits were removed by user decision on 2026-07-30.",
-    "heights": "Current project pick/release Z is 15. On 2026-07-30 the operator confirmed that the complete direct pick and release XY/Z/Pitch/Roll poses reached their targets, so direct_pick_release_pose_verified=true. This does not by itself verify magnetic pickup or final placement accuracy.",
+    "heights": "User set pick_height/release_height to -15 on 2026-07-31 from physical measurement. This does not by itself verify magnetic pickup or final placement accuracy.",
     "magnet": "STM32 USART1 application uses 115200 8N1 commands and a 50..500 ms timed MAGNET_ON lease. The by-id path ending 5B7A030191 is user-provided deployment data and must be rechecked on Jetson. Production sequence is pick-duration-elapsed -> MAGNET_ON/status-confirm -> release-duration-elapsed -> MAGNET_OFF/status-confirm. physical_pick_verified remains false until post-move visual evidence.",
-    "motion": "The first controller write after opening and read-only handshake is the direct HOME set_pose command; Q1 does not send CMD_SET_GLOBAL_ACC. Each pose advances after its configured 6000 ms duration because current NexArm coordinate/servo feedback is stale during confirmed physical motion."
+    "motion": "The first controller write after opening and read-only handshake is the direct HOME set_pose command; Q1 does not send CMD_SET_GLOBAL_ACC. Each pose advances after its configured 6000 ms duration because current NexArm coordinate/servo feedback is stale during confirmed physical motion.",
+    "target_geometry": "The official Figure 2 template remains 100x60 mm. Run 20260731_012300_357937 measured the four fixed source polygons at 6375.18 mm2 versus the nominal 6000 mm2, giving a 1.0308 linear ratio. Q1 uses target_scale=1.03 for this physical four-piece set. The scaled 103x61.8 mm target is centered in the A4 lower/right half with origin [53.5,191.85] mm."
   },
   "_note": "Single active source for NexArm, camera and STM32 magnet endpoints, arm calibration, HOME, motion and planning parameters. Production Q1 is STM32-only; real energization still requires --confirm RUN_Q1. The main sequence uses configured pose durations instead of stale NexArm arrival feedback."
 }

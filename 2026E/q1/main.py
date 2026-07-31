@@ -104,6 +104,7 @@ def _apply_robot_fields(config: Q1RuntimeConfig, data: dict) -> None:
         "orientation_tolerance_deg",
         "motion_timeout_s",
         "vertex_max_error_mm",
+        "target_scale",
     )
     for key in keys:
         if key in data and data[key] is not None:
@@ -116,6 +117,11 @@ def _apply_robot_fields(config: Q1RuntimeConfig, data: dict) -> None:
         config.nexarm_port = str(data["nexarm_port"])
     if data.get("magnet_port") and not config.magnet_port:
         config.magnet_port = str(data["magnet_port"])
+    if "target_origin_mm" in data:
+        origin = [float(value) for value in data["target_origin_mm"]]
+        if len(origin) != 2:
+            raise ValueError("target_origin_mm must have 2 numbers")
+        config.target_origin_mm = (origin[0], origin[1])
 
     raw_home = data.get("home_pose")
     if raw_home is not None:
@@ -153,6 +159,7 @@ def _load_runtime(args, *, mode: str, authorization: str) -> tuple[dict, Q1Runti
 def _build_analyzer(config: Q1RuntimeConfig) -> SceneAnalyzer:
     return SceneAnalyzer(
         target_origin_mm=config.target_origin_mm,
+        target_scale=config.target_scale,
         center_tolerance_mm=config.place_center_tolerance_mm,
         angle_tolerance_deg=config.place_angle_tolerance_deg,
         vertex_tolerance_mm=config.vertex_max_error_mm,

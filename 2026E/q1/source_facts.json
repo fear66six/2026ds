@@ -27,6 +27,16 @@
     "hold_policy": "lease=协议MAX_TIMEOUT_MS，renew_interval=lease//2，finally强制关闭",
     "confidence": "A"
   },
+  "q1_target_geometry": {
+    "official_template_mm": [100.0, 60.0],
+    "fixed_piece_target_scale": 1.03,
+    "scaled_target_mm": [103.0, 61.8],
+    "target_origin_mm": [53.5, 191.85],
+    "target_center_mm": [105.0, 222.75],
+    "source": "docs/E题_拼图装置.pdf page 2 Figure 2; run 20260731_012300_357937 scene/piece_moves JSON",
+    "confidence": "B+A+D",
+    "note": "1.03 only calibrates the current fixed Q1 four-piece set; it does not redefine the official Figure 2 dimensions or apply to field-provided pieces"
+  },
   "unknown_real_parameters": [
     "电磁铁吸合稳定时间",
     "释放侧移方向与距离",

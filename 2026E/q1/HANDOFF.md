@@ -1,5 +1,7 @@
 # Q1 本地 ↔ Jetson 交接说明
 
+**队友微调请先看更短的 [TEAMMATE_HANDOFF.md](TEAMMATE_HANDOFF.md)。** 本文偏路径同步、历史状态与 AI 接手细节。
+
 面向接手上的队友及其 AI：**先用本文定位路径与同步规则**，再回 `README.md` / `docs/` 查技术细节。
 
 本文只保存在开发机本地仓库，**不要求同步到 Jetson**。

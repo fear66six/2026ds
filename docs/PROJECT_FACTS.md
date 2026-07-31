@@ -268,6 +268,14 @@
 - 适用范围：当前 A4 摆放、四块实物、K230 取景和本次源码版本。
 - 最后核查时间：2026-07-30。
 
+## F-028 当前自备四片检测尺寸比图 2 名义模板大约 3%
+
+- 结论：成功完整运行 `20260731_012300_357937` 的四片源多边形面积分别约为 `499.75、1021.62、2216.76、2637.05 mm²`，合计 `6375.18 mm²`；赛题图 2 的 10×6 cm 矩形名义面积为 `6000 mm²`。统一线性比例为 `sqrt(6375.18/6000)=1.0308`。以 `1.03` 缩放目标后，外包框为 `103×61.8 mm`，同一实图四片刚体拟合最大误差为 `0.751、1.633、0.936、1.977 mm`，均低于 8 mm 门限。
+- 来源：`docs/E题_拼图装置.pdf` 第 2 页图 2；`D:\OIK\Downloads\20260731_012300_357937\capture.png`、`scene.json`、`piece_moves.json`；当前 `q1/analyzer.py`、`q1/pieces.py` 离线复算。
+- 可信等级：B（赛题尺寸）+ A（实机图、JSON 和源码复算）；是否需要实机验证：需要，缩放后的释放位置尚未部署执行。
+- 工程边界：不能从单次视觉测量区分实物制作尺寸偏差与轮廓测量系统误差；比例只适用于当前固定四片，不适用于现场未知碎片。
+- 最后核查时间：2026-07-31。
+
 ## F-028 STM32F103VET6 电磁铁固件已移植并通过串口与 100ms 吸合测试
 
 - 结论：新工程位于 `firmware/stm32f103ve_uart_magnet`，目标 MCU 为 STM32F103VE（高密度，`STM32F10X_HD`），启动文件 `startup_stm32f10x_hd.s`，Flash `0x08000000+512KiB`，SRAM `0x20000000+64KiB`。应用协议仍为 USART1 115200 8N1 的 `PING`/`GET_STATUS`/`MAGNET_ON`/`MAGNET_OFF`/`EMERGENCY_OFF`。Windows 侧 CubeProgrammer 识别芯片 ID `0x414`（STM32F101/F103 High-density，512KB），阶段 A `stm32f103ve_uart_ping.hex` 烧录 Verify 成功且 PING 20/20；阶段 B `stm32f103ve_uart_magnet.hex`（控制脚 PC0）烧录 Verify 成功。Jetson 路径 `/dev/serial/by-id/usb-1a86_USB_Single_Serial_5B7A030191-if00` 上 `PING=True`、`STATUS MAGNET=0 FAULT=0`，`MAGNET_ON 100` 应答成功，250ms 后状态为关，并完成 `MAGNET_OFF`/`EMERGENCY_OFF`。

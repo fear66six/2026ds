@@ -60,15 +60,15 @@ def configured_runtime(**overrides) -> Q1RuntimeConfig:
 def test_paper_to_robot_four_corners_and_center():
     mapper = ArmCoordinateMapper(ROBOT_CONFIG)
     expected = {
-        (0.0, 0.0): (173.0, 145.0),
-        (210.0, 0.0): (373.0, 145.0),
-        (0.0, 297.0): (173.0, -145.0),
-        (210.0, 297.0): (373.0, -145.0),
-        (105.0, 148.5): (273.0, 0.0),
+        (0.0, 0.0): (339.5, 143.25),
+        (210.0, 0.0): (335.5, -136.25),
+        (0.0, 297.0): (146.5, 143.75),
+        (210.0, 297.0): (142.5, -135.75),
+        (105.0, 148.5): (241.0, 3.75),
     }
     for paper, robot in expected.items():
         pose = mapper.paper_to_robot(*paper, 100.0)
-        assert (pose.x, pose.y) == pytest.approx(robot)
+        assert (pose.x, pose.y) == pytest.approx(robot, abs=1e-6)
 
 
 def test_landscape_paper_uses_known_halfway_divider():
@@ -132,8 +132,8 @@ def test_robot_parameters_are_consolidated_and_direct_pose_is_required():
     assert robot["direct_pick_release_pose_verified"] is True
     assert robot["physical_pick_verified"] is False
     assert robot["home_pose"] == [175.0, 0.0, 210.0, -90.0, 0.0, 0.0]
-    assert robot["pick_height"] == 15.0
-    assert robot["release_height"] == 15.0
+    assert robot["pick_height"] == -15.0
+    assert robot["release_height"] == -15.0
     assert "workspace_limits" not in robot
     assert "wrist_roll_min_deg" not in robot
     assert "wrist_roll_max_deg" not in robot
