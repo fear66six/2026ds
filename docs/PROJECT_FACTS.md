@@ -380,3 +380,11 @@
 - 来源：用户四点 XYZ 与图像像素（D）；`2026E/q1/config/robot_config.json`、`calibration.py`、`source_facts.json::q1_arm_calibration`（A）。
 - 可信等级：A+D；是否需要实机验证：需要。
 - 最后核查时间：2026-07-31。
+
+## F-040 Q3 扑克牌拼图已接入 Q1 正式硬件主链
+
+- 赛题事实：`docs/E题_拼图装置.pdf` 第 2 页规定现场碎片不超过 4 片、每片不超过 5 边、每边不小于 20 mm、每片至少一边属于外框，成品矩形长边为 90–120 mm、短边为 50–90 mm；扑克牌题还要求牌面花纹对应。来源类型为正式赛题资料，可信等级 B。
+- 算法事实：`2026E/q3/card_solver` 来自 `2026E-7.31/q3/card_solver`；除 `image_input.py` 新增“接收已矫正 A4 图”适配器及 `__init__.py` 导出外，其余算法文件保持同源。`CardPuzzleSolver` 使用无缩放、无镜像的刚体搜索，并以 Lab、红黑前景、线连续性、角标和对称性评价花纹拼接。来源类型为源码，可信等级 A。
+- 集成事实：`q3/analyzer.py::CardSceneAnalyzer.analyze` 复用 Q1 的 `detect_paper/rectify_paper`，将横拍 A4 统一为 `210×297 mm` 竖向纸面坐标；`q3/motion.py::plan_card_moves` 将求解结果转成 Q1 `SingleMovePlan`。相机、手眼标定、最大内接吸点、NexArm executor、摆臂 roll 补偿、STM32 磁铁会话及 `q1/config/robot_config.json` 均直接复用。
+- 离线证据：正式算法副本通过队友可用测试 `22 passed, 11 skipped`；合成图得到 4 片、约 `99.12×69.21 mm` 成品、4 个完整动作和 `capture.png/plan.png/scene.json/piece_moves.json`；Mock 控制器完成初始化、单次拍照、4 片执行、最终 HOME 和关闭。可信等级 A；实机成像、抓放及花纹方向仍需验证。
+- 最后核查时间：2026-07-31。

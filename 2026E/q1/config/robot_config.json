@@ -10,7 +10,7 @@
     [-0.014285714285705402, -0.9528619528619576, 151.5],
     [0.0, 0.0, 1.0]
   ],
-  "surface_z_plane_mm": [0.06428571428571239, -0.005050505050504112, -33.25],
+  "surface_z_plane_mm": [0.032, -0.005, -33.25],
   "surface_z_ref_paper_mm": [105.0, 148.5],
   "wrist_roll_zero_deg": 0.0,
   "wrist_roll_sign": 1.0,
@@ -19,7 +19,7 @@
   "motion_mode": "direct_pose",
   "direct_pick_release_pose_verified": true,
   "motion_calibration_status": "USER_RECALIBRATED_XYZ_2026-07-31: four-corner XY affine plus contact Z plane from tip-down ground touches; pick/release heights remain absolute at paper center and follow the plane elsewhere",
-  "pick_height": -10.0,
+  "pick_height": -15.0,
   "release_height": -8.0,
   "pick_robot_xy_offset_mm": [0.0, 0.0],
   "swing_roll_compensate": true,
