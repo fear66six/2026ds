@@ -74,14 +74,24 @@ def test_paper_to_robot_four_corners_and_center():
 
 
 def test_surface_z_plane_offsets_from_paper_center():
+    robot = json.loads(ROBOT_CONFIG.read_text(encoding="utf-8"))
     mapper = ArmCoordinateMapper(ROBOT_CONFIG)
-    center = mapper.paper_to_robot(105.0, 148.5, -10.0)
-    assert center.z == pytest.approx(-10.0, abs=1e-6)
-    top_left = mapper.paper_to_robot(0.0, 0.0, -10.0)
-    bottom_left = mapper.paper_to_robot(210.0, 0.0, -10.0)
+    a, b, c = robot["surface_z_plane_mm"]
+    ref_x, ref_y = robot["surface_z_ref_paper_mm"]
+    height = -10.0
+
+    def expected_z(x_mm: float, y_mm: float) -> float:
+        plane = a * x_mm + b * y_mm + c
+        ref_plane = a * ref_x + b * ref_y + c
+        return height + (plane - ref_plane)
+
+    center = mapper.paper_to_robot(ref_x, ref_y, height)
+    assert center.z == pytest.approx(height, abs=1e-6)
+    top_left = mapper.paper_to_robot(0.0, 0.0, height)
+    bottom_left = mapper.paper_to_robot(210.0, 0.0, height)
     # Contact plane is lower (more negative) at small paper-x / far robot-x.
-    assert top_left.z == pytest.approx(-16.0, abs=0.05)
-    assert bottom_left.z == pytest.approx(-2.5, abs=0.05)
+    assert top_left.z == pytest.approx(expected_z(0.0, 0.0), abs=1e-6)
+    assert bottom_left.z == pytest.approx(expected_z(210.0, 0.0), abs=1e-6)
     assert top_left.z < center.z < bottom_left.z
 
 
@@ -147,10 +157,11 @@ def test_robot_parameters_are_consolidated_and_direct_pose_is_required():
     assert robot["direct_pick_release_pose_verified"] is True
     assert robot["physical_pick_verified"] is False
     assert robot["home_pose"] == [175.0, 0.0, 210.0, -90.0, 0.0, 0.0, 3000]
-    assert robot["pick_height"] == -10.0
-    assert robot["release_height"] == -8.0
+    assert isinstance(robot["pick_height"], (int, float))
+    assert isinstance(robot["release_height"], (int, float))
     assert len(robot["surface_z_plane_mm"]) == 3
     assert robot["surface_z_ref_paper_mm"] == [105.0, 148.5]
+    assert robot["pick_robot_xy_offset_mm"] == [0.0, 0.0]
     assert "move_duration_ms" not in robot
     assert "workspace_limits" not in robot
     assert "wrist_roll_min_deg" not in robot

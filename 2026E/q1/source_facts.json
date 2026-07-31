@@ -35,11 +35,13 @@
     "rms_residual_xy_mm": 4.031128874149282,
     "rms_residual_z_mm": 0.25,
     "paper_center_robot_xy": [240.0, 8.5],
-    "surface_z_plane_mm": [0.06428571428571239, -0.005050505050504112, -33.25],
+    "surface_z_plane_mm": [0.04, -0.005, -33.25],
     "surface_z_ref_paper_mm": [105.0, 148.5],
-    "source": "User tip-down corner measurements 2026-07-31 evening; q1/config/robot_config.json",
+    "pick_height": -12.0,
+    "release_height": -8.0,
+    "source": "User tip-down corner measurements 2026-07-31 evening; XY affine from e7e1a290; Z plane slope and pick_height retuned in 2febb608 and subsequent operator tweaks; q1/config/robot_config.json",
     "confidence": "A+D",
-    "note": "XY residual ~4 mm RMS is dominated by non-affine corner inconsistency (+/-4 mm in robot X). Z plane residual is 0.25 mm RMS. pick_height/release_height stay absolute at the paper-center reference and follow the plane elsewhere. Physical pick/place with this matrix is still pending."
+    "note": "XY residual ~4 mm RMS is dominated by non-affine corner inconsistency (+/-4 mm in robot X). Active surface_z_plane_mm uses a reduced paper-x slope versus the raw four-point least-squares fit. pick_height/release_height stay absolute at the paper-center reference and follow the plane elsewhere. Q3 loads the same file through ArmCoordinateMapper. Physical pick/place with this matrix is still pending."
   },
   "q1_target_geometry": {
     "official_template_mm": [100.0, 60.0],
