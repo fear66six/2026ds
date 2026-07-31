@@ -43,6 +43,23 @@ class NexArmRobotExecutor:
         spec.loader.exec_module(module)
         self.client = module.NexArmClient(self.config.nexarm_port)
         self.client.open()
+        self.move_to_observe_pose()
+
+    def move_to_observe_pose(self) -> None:
+        if self.client is None:
+            raise RuntimeError("NexArm未初始化")
+        values = self.config.observe_pose
+        self._move_and_wait(
+            RobotPose(
+                float(values[0]),
+                float(values[1]),
+                float(values[2]),
+                float(values[3]),
+                float(values[4]),
+                float(values[5]),
+                int(values[6]),
+            )
+        )
         try:
             firmware = self.client.get_firmware_version(timeout=1.0)
             current = self.client.get_current_coords(timeout=1.0)
@@ -128,23 +145,13 @@ class NexArmRobotExecutor:
                 3,
             )
 
-    def move_to_observe_pose(self) -> None:
-        values = self.config.observe_pose
-        duration_ms = int(self.config.move_duration_ms or values[6])
-        self._move_and_wait(
-            RobotPose(
-                float(values[0]),
-                float(values[1]),
-                float(values[2]),
-                float(values[3]),
-                float(values[4]),
-                float(values[5]),
-                duration_ms,
-            )
-        )
-
     def execute_single_move(self, plan: SingleMovePlan, magnet) -> ExecutionResult:
-        required = (plan.source_pose_robot, plan.target_pose_robot, plan.release_pose)
+        required = (
+            plan.source_pose_robot,
+            plan.approach_pose,
+            plan.transfer_pose,
+            plan.release_pose,
+        )
         if any(pose is None for pose in required):
             return ExecutionResult(False, plan.template_id, "CALIBRATION_REQUIRED")
         magnet_event_start = len(getattr(magnet, "events", []))
@@ -173,7 +180,13 @@ class NexArmRobotExecutor:
             time.sleep(self.config.magnet_settle_ms / 1000.0)
             magnet.assert_healthy()
             phase_log.append({"phase": "MAGNET_ON", "status": "CONFIRMED"})
-            phase_log.append({"phase": "MOVE_TO_RELEASE", "status": "COMMAND_SENT"})
+            phase_log.append({"phase": "LIFT_DIAGONALLY", "status": "COMMAND_SENT"})
+            self._move_and_wait(plan.approach_pose)
+            magnet.assert_healthy()
+            phase_log.append({"phase": "TRANSFER_TO_APEX", "status": "COMMAND_SENT"})
+            self._move_and_wait(plan.transfer_pose)
+            magnet.assert_healthy()
+            phase_log.append({"phase": "DESCEND_DIAGONALLY", "status": "COMMAND_SENT"})
             self._move_and_wait(plan.release_pose)
             magnet.assert_healthy()
             phase_log.append(
@@ -185,7 +198,7 @@ class NexArmRobotExecutor:
                     "attempt": dict(self._active_motion_attempt or {}),
                 }
             )
-            trajectory.append("direct_pick_to_release_pose_duration_elapsed")
+            trajectory.append("diagonal_lift_transfer_descent_duration_elapsed")
         phase_log.append({"phase": "MAGNET_OFF", "status": "CONFIRMED"})
         if self.config.magnet_release_settle_ms is None:
             raise RuntimeError("缺少电磁铁释放稳定时间")

@@ -96,6 +96,7 @@ def _apply_robot_fields(config: Q1RuntimeConfig, data: dict) -> None:
         "physical_pick_enabled",
         "pick_height",
         "release_height",
+        "transfer_apex_height",
         "move_duration_ms",
         "magnet_settle_ms",
         "magnet_release_settle_ms",

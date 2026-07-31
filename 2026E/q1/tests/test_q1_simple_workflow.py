@@ -78,6 +78,7 @@ class _Robot:
 
     def initialize(self) -> None:
         self.events.append("robot.initialize")
+        self.events.append("robot.observe")
 
     def move_to_observe_pose(self) -> None:
         self.events.append("robot.observe")
@@ -158,11 +159,11 @@ def test_controller_captures_and_analyzes_once_then_executes_queue(
     assert analyzer.analysis_count == 1
     assert robot.executed == ["P1", "P2"]
     assert events[:7] == [
-        "camera.open",
         "robot.initialize",
+        "robot.observe",
+        "camera.open",
         "magnet.initialize",
         "magnet.ensure_off",
-        "robot.observe",
         "camera.capture:0",
         "analyzer.analyze:0",
     ]

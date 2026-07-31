@@ -4,10 +4,10 @@
   "camera_port": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5B7A028646-if00",
   "magnet_port": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5B7A030191-if00",
   "magnet_backend": "stm32",
-  "home_pose": [175.0, 0.0, 210.0, -90.0, 0.0, 0.0],
+  "home_pose": [175.0, 0.0, 210.0, -90.0, 0.0, 0.0, 3000],
   "paper_to_robot_matrix": [
-    [-0.01904761904761905, -0.6498316498316498, 339.5],
-    [-1.330952380952381, 0.0016835016835016835, 143.25],
+    [-0.9238095238095048, -0.006734006734015807, 330.5],
+    [-0.011904761904753852, -0.9107744107744152, 139.75000000000003],
     [0.0, 0.0, 1.0]
   ],
   "wrist_roll_zero_deg": 0.0,
@@ -19,6 +19,7 @@
   "motion_calibration_status": "USER_VERIFIED_Z15_2026-07-30: operator confirms complete direct pick and release XY/Z/Pitch/Roll poses reached",
   "pick_height": -15.0,
   "release_height": -15.0,
+  "transfer_apex_height": 75.0,
   "move_duration_ms": 6000,
   "position_tolerance_mm": 10.0,
   "orientation_tolerance_deg": 3.0,
@@ -34,11 +35,12 @@
   "physical_pick_verified": false,
   "capture_settle_s": 1.0,
   "sources": {
-    "home_pose": "User selected project HOME [175,0,210,-90,0,0] on 2026-07-30 so the camera can include the complete paper. Motion duration remains the separate move_duration_ms=6000 setting. This configuration change is not itself proof of physical arrival.",
+    "home_pose": "User selected project HOME [175,0,210,-90,0,0] for the complete-paper view. On 2026-07-31 HOME duration was set to 3000 ms independently of the 6000 ms pick/release duration, and run startup was reordered so HOME is the first NexArm protocol write after opening the serial port.",
     "position_tolerance_mm": "User approved 10 mm after repeat stable feedback [168,5,219,-86.7,0,0] produced 8.66 mm position error",
-    "paper_to_robot_matrix": "Fitted 2026-07-31 from user-measured A4 corners in robot XY: TL(0,0)->(336,141), TR(210,0)->(339,-134), BL(0,297)->(150,146), BR(210,297)->(139,-138). Affine least-squares residual about 4.16 mm RMS.",
+    "paper_to_robot_matrix": "Fitted 2026-07-31 from landscape-image corners and user-measured robot XY: image TL/paper(0,0)->(328,139), image TR/paper(0,297)->(331,-130), image BL/paper(210,0)->(139,138), image BR/paper(210,297)->(132,-134). Affine least-squares residual about 2.61 mm RMS.",
     "wrist": "User: zero initial roll, clockwise positive, counter-clockwise negative. Software roll range limits were removed by user decision on 2026-07-30.",
     "heights": "User set pick_height/release_height to -15 on 2026-07-31 from physical measurement. This does not by itself verify magnetic pickup or final placement accuracy.",
+    "transfer": "Pick-to-release uses a diagonal arch: 25% XY at Z45, 60% XY at Z75, then diagonal descent to release Z-15. Roll is blended at the same fractions and the three segment durations sum to move_duration_ms=6000.",
     "magnet": "STM32 USART1 application uses 115200 8N1 commands and a 50..500 ms timed MAGNET_ON lease. The by-id path ending 5B7A030191 is user-provided deployment data and must be rechecked on Jetson. Production sequence is pick-duration-elapsed -> MAGNET_ON/status-confirm -> release-duration-elapsed -> MAGNET_OFF/status-confirm. physical_pick_verified remains false until post-move visual evidence.",
     "motion": "The first controller write after opening and read-only handshake is the direct HOME set_pose command; Q1 does not send CMD_SET_GLOBAL_ACC. Each pose advances after its configured 6000 ms duration because current NexArm coordinate/servo feedback is stale during confirmed physical motion.",
     "target_geometry": "The official Figure 2 template remains 100x60 mm. Run 20260731_012300_357937 measured the four fixed source polygons at 6375.18 mm2 versus the nominal 6000 mm2, giving a 1.0308 linear ratio. Q1 uses target_scale=1.03 for this physical four-piece set. The scaled 103x61.8 mm target is centered in the A4 lower/right half with origin [53.5,191.85] mm."

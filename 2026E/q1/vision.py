@@ -156,6 +156,114 @@ def _find_paper_frame_from_content(gray: np.ndarray, thresh: int = 15) -> Option
     )
 
 
+def _find_paper_frame_from_split_halves(gray: np.ndarray) -> Optional[np.ndarray]:
+    """Recover the landscape A4 frame from its two dark halves and bright divider."""
+    h, w = gray.shape
+    if h < 80 or w < 160:
+        return None
+
+    blur = cv2.GaussianBlur(gray, (5, 5), 0)
+    _, dark = cv2.threshold(
+        blur,
+        0,
+        255,
+        cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU,
+    )
+    column_coverage = np.mean(dark > 0, axis=0)
+    active_columns = column_coverage >= 0.20
+
+    runs: list[tuple[int, int]] = []
+    start: Optional[int] = None
+    for x, active in enumerate(active_columns):
+        if active and start is None:
+            start = x
+        elif not active and start is not None:
+            runs.append((start, x - 1))
+            start = None
+    if start is not None:
+        runs.append((start, w - 1))
+
+    min_half_width = int(round(w * 0.25))
+    halves = [run for run in runs if run[1] - run[0] + 1 >= min_half_width]
+    if len(halves) < 2:
+        return None
+
+    best_pair: Optional[tuple[int, int, int, int]] = None
+    best_score = -1.0
+    for left_run in halves:
+        for right_run in halves:
+            lx0, lx1 = left_run
+            rx0, rx1 = right_run
+            if lx1 >= rx0:
+                continue
+            left_width = lx1 - lx0 + 1
+            right_width = rx1 - rx0 + 1
+            width_ratio = left_width / max(right_width, 1)
+            gap = rx0 - lx1 - 1
+            full_width = rx1 - lx0 + 1
+            divider_x = (lx1 + rx0) * 0.5
+            if not 0.72 <= width_ratio <= 1.38:
+                continue
+            if not max(2.0, w * 0.002) <= gap <= w * 0.06:
+                continue
+            if full_width < w * 0.65 or full_width > w * 0.99:
+                continue
+            if not w * 0.35 <= divider_x <= w * 0.65:
+                continue
+
+            divider = gray[:, lx1 + 1 : rx0]
+            if divider.size == 0:
+                continue
+            bright_fraction = float(
+                np.mean(divider >= config.WHITE_DIVIDER_GRAY_THRESH)
+            )
+            if bright_fraction < 0.72:
+                continue
+
+            score = full_width * (1.0 - abs(1.0 - width_ratio))
+            if score > best_score:
+                best_score = score
+                best_pair = (lx0, lx1, rx0, rx1)
+
+    if best_pair is None:
+        return None
+
+    left, _, _, right = best_pair
+    paper_dark = dark[:, left : right + 1] > 0
+    row_coverage = np.mean(paper_dark, axis=1)
+    paper_rows = np.flatnonzero(row_coverage >= 0.20)
+    if paper_rows.size == 0:
+        return None
+
+    top = int(paper_rows[0])
+    bottom = int(paper_rows[-1])
+    paper_width = right - left
+    visible_height = bottom - top
+    if visible_height < h * 0.55:
+        return None
+    visible_aspect = paper_width / max(visible_height, 1)
+    if abs(visible_aspect - _a4_aspect_landscape()) > 0.35:
+        return None
+
+    expected_height = paper_width / _a4_aspect_landscape()
+    edge_margin = max(3, int(round(h * 0.015)))
+    top_clipped = top <= edge_margin
+    bottom_clipped = bottom >= h - 1 - edge_margin
+    if top_clipped and not bottom_clipped:
+        top = int(round(bottom - expected_height))
+    elif bottom_clipped and not top_clipped:
+        bottom = int(round(top + expected_height))
+    elif top_clipped and bottom_clipped and expected_height > visible_height:
+        overflow = expected_height - visible_height
+        top = int(round(top - overflow * 0.5))
+        bottom = int(round(bottom + overflow * 0.5))
+
+    return np.array(
+        [[left, top], [right, top], [right, bottom], [left, bottom]],
+        dtype=np.float32,
+    )
+
+
 def _bbox_border_touches(x: float, y: float, bw: float, bh: float, w: int, h: int, margin: int = 8) -> int:
     n = 0
     if x <= margin:
@@ -317,6 +425,15 @@ def _detect_paper_dark(frame: np.ndarray) -> Optional[PaperFrame]:
     """黑底场景：先检测外部黑纸垫矩形，再用于内部标定"""
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     h, w = frame.shape[:2]
+    split_halves = _find_paper_frame_from_split_halves(gray)
+    if split_halves is not None:
+        ordered = _order_corners(split_halves)
+        landscape = _corners_landscape_in_image(ordered)
+        return PaperFrame(
+            corners_px=ordered,
+            px_per_cm=_paper_px_per_cm(ordered, landscape),
+            landscape_in_image=landscape,
+        )
 
     merged = _merge_stacked_paper_frame(gray)
     outer = _detect_outer_mat_frame(gray)
@@ -393,11 +510,9 @@ def _detect_paper_dark(frame: np.ndarray) -> Optional[PaperFrame]:
         best = quad_best
 
     if best is None:
-        content_frame = _find_paper_frame_from_content(gray, thresh=8)
-        if content_frame is not None:
-            best = content_frame
-        else:
-            return None
+        best = _find_paper_frame_from_content(gray, thresh=8)
+    if best is None:
+        return None
 
     ordered = _order_corners(best)
     landscape = _corners_landscape_in_image(ordered)

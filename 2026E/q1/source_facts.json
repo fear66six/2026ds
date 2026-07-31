@@ -1,9 +1,9 @@
 {
   "observe_pose": {
-    "value": [175.0, 0.0, 210.0, -90.0, 0.0, 0.0],
-    "source": "User selected project HOME [175,0,210,-90,0,0] on 2026-07-30 so the camera can include the complete paper; runtime appends the separate move_duration_ms value",
+    "value": [175.0, 0.0, 210.0, -90.0, 0.0, 0.0, 3000],
+    "source": "User selected project HOME [175,0,210,-90,0,0] for the complete-paper view and requested a faster reset on 2026-07-31; HOME has an independent 3000 ms duration",
     "implementation": "q1/executors/nexarm.py::move_to_observe_pose (direct single move)",
-    "behavior": "主流程启动后发送一次 HOME/观察位，等待 move_duration_ms 后只拍一张正式图，再识别、规划并执行完整队列；当前 NexArm 反馈不用于步骤推进；A4 边界由 detect_paper 检测",
+    "behavior": "正式 run 先打开 NexArm 串口并立即以第一条协议写入发送一次 HOME；HOME 完成后才查询状态、初始化 K230/STM32、拍一张正式图并执行规划队列。P1-P4 仍使用独立的 move_duration_ms=6000",
     "historical_tasksuite": {
       "value": [200.0, 0.0, 160.0, -90.0, 0.0, -60.0, 1500],
       "source": "TaskSuite_E/board_roi_config.h + system_task_handle.cpp::move_observe",
@@ -27,6 +27,17 @@
     "hold_policy": "lease=协议MAX_TIMEOUT_MS，renew_interval=lease//2，finally强制关闭",
     "confidence": "A"
   },
+    "q1_arm_calibration": {
+    "image_corners_px": [[136, 16], [1112, 10], [133, 703], [1114, 707]],
+    "paper_corners_mm": [[0, 0], [0, 297], [210, 0], [210, 297]],
+    "robot_xy": [[328, 139], [331, -130], [139, 138], [132, -134]],
+    "fit": "3x3 homogeneous affine least squares",
+    "rms_residual_mm": 2.6100766272,
+    "paper_center_robot_xy": [232.5, 3.25],
+    "source": "User measurements 2026-07-31; q1/config/robot_config.json::paper_to_robot_matrix",
+    "confidence": "A+D",
+    "note": "The updated matrix has passed offline recognition and four-piece planning on 0cfcb4c024981bd1d47b4a83a06af8a8.png but has not yet been used for a physical pick/place run."
+  },
   "q1_target_geometry": {
     "official_template_mm": [100.0, 60.0],
     "fixed_piece_target_scale": 1.03,
@@ -36,6 +47,26 @@
     "source": "docs/E题_拼图装置.pdf page 2 Figure 2; run 20260731_012300_357937 scene/piece_moves JSON",
     "confidence": "B+A+D",
     "note": "1.03 only calibrates the current fixed Q1 four-piece set; it does not redefine the official Figure 2 dimensions or apply to field-provided pieces"
+  },
+  "q1_transfer_trajectory": {
+    "pick_height": -15.0,
+    "release_height": -15.0,
+    "apex_height": 75.0,
+    "waypoints": [
+      {"xy_fraction": 0.25, "z": 45.0, "roll_fraction": 0.25},
+      {"xy_fraction": 0.60, "z": 75.0, "roll_fraction": 0.60},
+      {"xy_fraction": 1.0, "z": -15.0, "roll_fraction": 1.0}
+    ],
+    "duration_ms": [2000, 2000, 2000],
+    "source": "run 20260730_215916_405845; q1/motion.py; q1/executors/nexarm.py",
+    "confidence": "A+C+D",
+    "note": "Offline replanning confirms every segment changes X, Y and Z for all four pieces. Physical trajectory remains to be verified."
+  },
+    "q1_partial_paper_detection": {
+    "behavior": "For the fixed landscape Q1 composition, detect_paper pairs the left and right dark halves, validates the narrow bright divider, and gives that full-width candidate priority over a single dark half. A clipped top or bottom edge is extrapolated from the visible 29.7 cm side using the fixed A4 aspect ratio.",
+    "source": "q1/vision.py::_find_paper_frame_from_split_halves; output/plans/q1/sim_clipped_a4_20260731/img1..img3/capture.png",
+    "confidence": "A+D",
+    "note": "The three clipped samples and run 20260730_211654_514549 produce paper_valid=true, scene_valid=true and P1..P4 in UPPER_SOURCE. The effective divider gap may be as narrow as max(2 px, 0.2% image width); brightness and paired-half geometry remain required."
   },
   "unknown_real_parameters": [
     "电磁铁吸合稳定时间",

@@ -39,6 +39,7 @@ class Q1RuntimeConfig:
     direct_pick_release_pose_verified: bool = False
     pick_height: float | None = None
     release_height: float | None = None
+    transfer_apex_height: float | None = None
     move_duration_ms: int | None = None
     magnet_settle_ms: int | None = None
     magnet_release_settle_ms: int | None = None
@@ -110,6 +111,7 @@ class Q1RuntimeConfig:
         required = {
             "pick_height": self.pick_height,
             "release_height": self.release_height,
+            "transfer_apex_height": self.transfer_apex_height,
             "move_duration_ms": self.move_duration_ms,
             "magnet_settle_ms": self.magnet_settle_ms,
             "magnet_release_settle_ms": self.magnet_release_settle_ms,
@@ -147,6 +149,7 @@ class Q1RuntimeConfig:
         required = {
             "pick_height": self.pick_height,
             "release_height": self.release_height,
+            "transfer_apex_height": self.transfer_apex_height,
             "move_duration_ms": self.move_duration_ms,
             "vertex_max_error_mm": self.vertex_max_error_mm,
         }

@@ -160,6 +160,7 @@ release_roll = pick_roll + wrist_roll_sign * normalize(rotation_delta_deg)
 | `motion_mode` | 正式执行模式；当前必须为 `direct_pose` |
 | `pick_height` | 吸取高度 z |
 | `release_height` | 释放高度 z |
+| `transfer_apex_height` | 斜向拱形搬运的最高 z |
 | `move_duration_ms` | 单步 `set_pose` 时长 |
 | `magnet_settle_ms` | 吸合后等待 |
 | `home_pose` | **唯一**观察/拍照位，与复位 HOME 统一：`[x,y,z,pitch,roll,claw]` 或再加 `duration_ms` |
@@ -167,9 +168,8 @@ release_roll = pick_roll + wrist_roll_sign * normalize(rotation_delta_deg)
 | `orientation_tolerance_deg` | pitch/roll/claw 到位容差 |
 | `nexarm_port` | 固定 NexArm by-id 设备路径 |
 
-当前 HOME/观察位为 `(175,0,210,-90,0,0)`，时长 6000 ms，到位位置容差
-10 mm。吸取和释放高度均为 Z15；用户已于 2026-07-30 确认完整源/目标六维
-位姿到位。
+当前 HOME/观察位为 `(175,0,210,-90,0,0)`，时长 3000 ms，到位位置容差
+10 mm。吸取和释放高度均为 Z=-15，搬运拱顶为 Z=75。
 
 ## 6. 单步规划用的参考点
 
@@ -185,13 +185,13 @@ rigid_placement_transform(当前顶点_mm, 目标模板顶点_mm)
 | `pick_point_paper` | 纸面抓取参考点 = `start_c`（mm） |
 | `target_pose_paper` | 纸面释放参考点 = `end_c`（mm） |
 | `rotation_delta_deg` | 纸面内需转过的角 |
-| `approach/transfer/rotate` | `direct_pose` 下不生成，保持 `None` 仅用于旧产物兼容 |
+| `approach/transfer` | 吸取后斜向抬升点与拱顶点 |
+| `rotate` | 当前保持 `None`，roll 已随搬运位置渐变 |
 | `source/release` | 完整六维目标；z = pick/release 高度，`roll` = 映射后的腕部角 |
 
-正式执行依次调用一次完整 `set_pose(source)` 和一次完整 `set_pose(release)`。
-XYZ/Pitch/Roll/Claw 由同一条厂商坐标命令发送，不构造固定 XY 的竖直升降或
-固定 Z 的横向转运航点。两个 Z15 目标的完整位姿到位已由用户实机确认；这不等于
-磁吸可靠性或最终拼放精度已经验证。
+正式执行先调用 `set_pose(source)`，吸合后依次调用斜向抬升点、拱顶点和
+`set_pose(release)`。每段均同时改变 XY 与 Z，不构造固定 XY 的竖直升降或
+固定 Z 的横向转运航点。
 
 ## 7. 运行产物里怎么核对坐标
 

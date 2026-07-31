@@ -7,7 +7,14 @@ import numpy as np
 from .calibration import ArmCoordinateMapper
 from .config import DIVIDER_Y_CM
 from .geometry import apply_rigid_transform, compute_rigid_transform, normalize_angle_deg
-from .models import PaperPose, PieceMove, PieceTaskStatus, SceneAnalysis, SingleMovePlan
+from .models import (
+    PaperPose,
+    PieceMove,
+    PieceTaskStatus,
+    RobotPose,
+    SceneAnalysis,
+    SingleMovePlan,
+)
 from .puzzle_solver import TEMPLATE_IDS
 from .runtime_config import Q1RuntimeConfig
 
@@ -65,8 +72,13 @@ def plan_single_move(
     approach = transfer = rotate_pose = None
     pick_roll_deg = release_roll_deg = None
     if mapper.is_calibrated():
-        if None in (config.pick_height, config.release_height, config.move_duration_ms):
-            raise RuntimeError("CALIBRATION_REQUIRED: 缺少抓取/释放高度或动作时间")
+        if None in (
+            config.pick_height,
+            config.release_height,
+            config.transfer_apex_height,
+            config.move_duration_ms,
+        ):
+            raise RuntimeError("CALIBRATION_REQUIRED: 缺少抓取/释放/搬运高度或动作时间")
         wrist = mapper.map_in_plane_rotation(rotation_delta_deg)
         pick_roll_deg = float(wrist.pick_roll_deg)
         release_roll_deg = float(wrist.release_roll_deg)
@@ -82,8 +94,31 @@ def plan_single_move(
             target.x_mm, target.y_mm, float(config.release_height), roll_deg=release_roll_deg
         )
         release = target_robot
-        for pose in (source_robot, target_robot, pick_robot, release):
-            pose.duration_ms = int(config.move_duration_ms)
+        source_robot.duration_ms = int(config.move_duration_ms)
+
+        transfer_duration_ms = max(1, int(config.move_duration_ms) // 3)
+        lift_height = (
+            float(config.pick_height)
+            + (float(config.transfer_apex_height) - float(config.pick_height))
+            * (2.0 / 3.0)
+        )
+
+        def transfer_pose(alpha: float, z: float) -> RobotPose:
+            return RobotPose(
+                source_robot.x + (target_robot.x - source_robot.x) * alpha,
+                source_robot.y + (target_robot.y - source_robot.y) * alpha,
+                z,
+                source_robot.pitch + (target_robot.pitch - source_robot.pitch) * alpha,
+                pick_roll_deg + (release_roll_deg - pick_roll_deg) * alpha,
+                source_robot.claw,
+                transfer_duration_ms,
+            )
+
+        approach = transfer_pose(0.25, lift_height)
+        transfer = transfer_pose(0.60, float(config.transfer_apex_height))
+        target_robot.duration_ms = (
+            int(config.move_duration_ms) - transfer_duration_ms * 2
+        )
 
     return SingleMovePlan(
         cycle_index=scene.cycle_index,

@@ -93,10 +93,11 @@ class Q1Controller:
         self.recorder.event(event)
 
     def _initialize_devices(self) -> None:
+        self._transition(Q1State.INITIALIZE_ROBOT)
+        self._transition(Q1State.MOVE_TO_OBSERVE)
+        self.robot.initialize()
         self._transition(Q1State.INITIALIZE_CAMERA)
         self.camera.open()
-        self._transition(Q1State.INITIALIZE_ROBOT)
-        self.robot.initialize()
         self._transition(Q1State.INITIALIZE_MAGNET)
         self.magnet.initialize()
         self.magnet.ensure_off()
@@ -148,8 +149,6 @@ class Q1Controller:
             if not self.config.direct_pick_release_pose_verified:
                 raise RuntimeError("DIRECT_PICK_RELEASE_POSE_UNVERIFIED")
             self._initialize_devices()
-            self._transition(Q1State.MOVE_TO_OBSERVE)
-            self.robot.move_to_observe_pose()
             scene = self._capture_and_plan()
             self._execute_move_queue()
 

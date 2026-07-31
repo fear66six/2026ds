@@ -37,6 +37,7 @@ def configured_runtime(**overrides) -> Q1RuntimeConfig:
     for key in (
         "pick_height",
         "release_height",
+        "transfer_apex_height",
         "move_duration_ms",
         "magnet_settle_ms",
         "magnet_release_settle_ms",
@@ -54,17 +55,18 @@ def configured_runtime(**overrides) -> Q1RuntimeConfig:
     config.motion_calibration_status = robot["motion_calibration_status"]
     config.physical_pick_verified = robot["physical_pick_verified"]
     config.idle_stable_samples = robot["stable_samples"]
+    config.observe_pose = tuple(robot["home_pose"])
     return config
 
 
 def test_paper_to_robot_four_corners_and_center():
     mapper = ArmCoordinateMapper(ROBOT_CONFIG)
     expected = {
-        (0.0, 0.0): (339.5, 143.25),
-        (210.0, 0.0): (335.5, -136.25),
-        (0.0, 297.0): (146.5, 143.75),
-        (210.0, 297.0): (142.5, -135.75),
-        (105.0, 148.5): (241.0, 3.75),
+        (0.0, 0.0): (330.5, 139.75),
+        (0.0, 297.0): (328.5, -130.75),
+        (210.0, 0.0): (136.5, 137.25),
+        (210.0, 297.0): (134.5, -133.25),
+        (105.0, 148.5): (232.5, 3.25),
     }
     for paper, robot in expected.items():
         pose = mapper.paper_to_robot(*paper, 100.0)
@@ -131,7 +133,7 @@ def test_robot_parameters_are_consolidated_and_direct_pose_is_required():
     assert robot["motion_mode"] == "direct_pose"
     assert robot["direct_pick_release_pose_verified"] is True
     assert robot["physical_pick_verified"] is False
-    assert robot["home_pose"] == [175.0, 0.0, 210.0, -90.0, 0.0, 0.0]
+    assert robot["home_pose"] == [175.0, 0.0, 210.0, -90.0, 0.0, 0.0, 3000]
     assert robot["pick_height"] == -15.0
     assert robot["release_height"] == -15.0
     assert "workspace_limits" not in robot
@@ -203,7 +205,7 @@ def test_current_solid_piece_layout_uses_global_mirror_not_piece_reflection():
     assert transform.max_error_mm == pytest.approx(2.2648, abs=0.01)
 
 
-def test_initialize_handshakes_without_pre_home_controller_write(tmp_path):
+def test_home_is_first_protocol_write_before_status_queries(tmp_path):
     sdk = tmp_path / "hardware" / "nexarm" / "jetson_to_nexarm" / "nexarm_sdk.py"
     sdk.parent.mkdir(parents=True)
     sdk.write_text(
@@ -218,8 +220,12 @@ class NexArmClient:
     def open(self): pass
     def close(self): pass
     def flush_input_buffer(self): return 0
-    def get_firmware_version(self, timeout): return "1.0.0"
+    def set_pose(self, *values): self.write_commands.append(("set_pose", values))
+    def get_firmware_version(self, timeout):
+        self.write_commands.append(("get_firmware_version",))
+        return "1.0.0"
     def get_current_coords(self, timeout):
+        self.write_commands.append(("get_current_coords",))
         now = time.monotonic()
         return SimpleNamespace(
             x=173, y=4, z=226, pitch=-84.4, roll=0, claw=0,
@@ -238,7 +244,12 @@ class NexArmClient:
     )
     executor = NexArmRobotExecutor(tmp_path, configured_runtime())
     executor.initialize()
-    assert executor.client.write_commands == []
+    assert executor.client.write_commands[0][0] == "set_pose"
+    assert executor.client.write_commands[0][1][-1] == 3000
+    assert [item[0] for item in executor.client.write_commands[1:]] == [
+        "get_firmware_version",
+        "get_current_coords",
+    ]
     assert executor._initial_status["firmware_version"] == "1.0.0"
     assert executor._initial_status["initial_pose"] == [
         173.0,
@@ -273,7 +284,7 @@ def test_move_sequence_does_not_finish_before_command_duration(monkeypatch):
     assert executor._active_motion_attempt["result"] == "DURATION_ELAPSED"
 
 
-def test_executor_sends_only_direct_pick_and_release_targets():
+def test_executor_uses_planned_diagonal_transfer_targets():
     config = configured_runtime()
     executor = NexArmRobotExecutor(Q1_ROOT.parent, config)
     visited: list[float] = []
@@ -304,10 +315,10 @@ def test_executor_sends_only_direct_pick_and_release_targets():
 
     result = executor.execute_single_move(plan, FakeMagnet())
     assert result.ok
-    assert visited == [2, 5]
+    assert visited == [2, 1, 4, 5]
     assert result.details["trajectory_steps"] == [
         "direct_home_to_pick_pose_duration_elapsed",
-        "direct_pick_to_release_pose_duration_elapsed",
+        "diagonal_lift_transfer_descent_duration_elapsed",
         "magnet_off_after_release_pose_duration",
     ]
     assert "real_arm_motion" not in result.details
