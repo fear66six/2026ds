@@ -1,0 +1,65 @@
+{
+  "official_q3_constraints": {
+    "task": "assemble white playing-card face fragments with matching artwork",
+    "piece_count_max": 4,
+    "piece_edge_count_max": 5,
+    "minimum_piece_edge_mm": 20.0,
+    "target_rectangle_long_side_mm": [90.0, 120.0],
+    "target_rectangle_short_side_mm": [50.0, 90.0],
+    "source": "docs/E题_拼图装置.pdf page 2",
+    "source_type": "official competition document",
+    "confidence": "B",
+    "requires_physical_verification": false
+  },
+  "card_solver_integration": {
+    "upstream": "2026E-7.31/q3/card_solver",
+    "production_copy": "2026E/q3/card_solver",
+    "algorithm": [
+      "polygon fragment detection",
+      "rigid geometry search without scale or reflection",
+      "Lab colour and red/black foreground seam scoring",
+      "line continuity, corner-marker and symmetry scoring"
+    ],
+    "adapter": "q3/card_solver/image_input.py::card_puzzle_from_rectified",
+    "entry": "q3/analyzer.py::CardSceneAnalyzer.analyze",
+    "source_type": "project source code",
+    "confidence": "A",
+    "requires_physical_verification": true
+  },
+  "q1_runtime_reuse": {
+    "reused_modules": [
+      "q1.vision.detect_paper and rectify_paper",
+      "q1.calibration.ArmCoordinateMapper",
+      "q1.executors.nexarm.NexArmRobotExecutor",
+      "q1.magnet.STM32MagnetController",
+      "q1/config/robot_config.json"
+    ],
+    "q3_specific_modules": [
+      "q3.analyzer",
+      "q3.card_solver",
+      "q3.motion",
+      "q3.workflow",
+      "q3.controller",
+      "q3.main"
+    ],
+    "coordinate_contract": "Q1 rectifies the landscape camera view into portrait A4 paper coordinates x=0..210 mm and y=0..297 mm; source is the upper half and the assembled card is centered in the lower half",
+    "source_type": "project source code and engineering decision",
+    "confidence": "A+D",
+    "requires_physical_verification": true
+  },
+  "offline_validation": {
+    "upstream_regression": "22 passed, 11 skipped; tests forced to import 2026E/q3/card_solver",
+    "synthetic_pipeline": "Q1 paper detection, Q3 detection/solve and Q1 motion planning produced four moves and capture.png, plan.png, scene.json and piece_moves.json",
+    "synthetic_rectangle_mm": [99.11715732739009, 69.20691912081179],
+    "mock_controller": "initialize, single capture, four move executions, final HOME and shutdown completed without hardware access",
+    "source_type": "offline execution evidence",
+    "confidence": "A",
+    "requires_physical_verification": true
+  },
+  "runtime_dependency": {
+    "additional_to_q1": "shapely>=2.0",
+    "source": "2026E-7.31/q3/requirements.txt and card_solver imports",
+    "confidence": "A",
+    "requires_jetson_verification": true
+  }
+}
