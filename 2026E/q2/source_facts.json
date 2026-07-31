@@ -1,0 +1,56 @@
+{
+  "official_q2_constraints": {
+    "task": "assemble plain white paper fragments into a rectangle",
+    "piece_count_max": 4,
+    "piece_edge_count_max": 5,
+    "minimum_piece_edge_mm": 20.0,
+    "target_rectangle_long_side_mm": [90.0, 120.0],
+    "target_rectangle_short_side_mm": [50.0, 90.0],
+    "source": "docs/E题_拼图装置.pdf page 2",
+    "source_type": "official competition document",
+    "confidence": "B",
+    "requires_physical_verification": false
+  },
+  "solver_integration": {
+    "upstream": "q2/puzzle_solver",
+    "production_copy": "2026E/q2/puzzle_solver",
+    "adapter": "q2/puzzle_solver/image_input.py::q2_puzzle_from_rectified",
+    "entry": "q2/analyzer.py::WhitePuzzleAnalyzer.analyze",
+    "algorithm": "white-fragment raster polygons followed by rigid edge matching, DFS/backtracking and rectangle validation",
+    "executable_gate": "solution.success and not solution.best_effort and solution.official_dimensions_valid is True",
+    "upstream_sha256": {
+      "config.py": "79F87990CDF0D5EBA354322035E354BA12256D9A5EC2A0262160A6DD8112DBC2",
+      "geometry.py": "C54CE9AA33F0260029F4735A44CD11E94A321D89411F0C54331FD722C5EEEFB1",
+      "image_input.py": "98C511595ECD986C195B8C2784C6DD7E40D58FD17D29121E43265D8FF2AD45D6",
+      "models.py": "C19FB9F3837B7950FB0C892D4E7A651DA932198B8C264B78F2E091333B6C6734",
+      "raster_detection.py": "0C0BFD74B2E469F1C4AF0F639FBA59EB005D9FC7E5761448B7F1AB56E775A258",
+      "sample_data.py": "385E8E60C24864E80E599F3B0383DCAE364A7BD6D127CD997E083B4B81ADB9DE",
+      "solver.py": "087B0039588E2D5B30AD45E83CB2C8D74B4457D3B4CB9924B49A520F6E60A216",
+      "validation.py": "F2AA66CA245EDA3A362915C350EEC32973ED0734E542F934F8271D33E3FB88BF",
+      "visualization.py": "697C2291A5AD5D2D421F0543C7E07435592923B4467138B0E2987D8A685C2A5A"
+    },
+    "source_type": "project source code",
+    "confidence": "A",
+    "requires_physical_verification": true
+  },
+  "q1_runtime_reuse": {
+    "reused_modules": [
+      "q1.vision.detect_paper and rectify_paper",
+      "q1.calibration.ArmCoordinateMapper",
+      "q1.geometry.polygon_maximum_clearance_point",
+      "q1.executors.nexarm.NexArmRobotExecutor",
+      "q1.magnet.STM32MagnetController",
+      "q1/config/robot_config.json"
+    ],
+    "coordinate_contract": "Q1 rectifies the landscape camera view into portrait A4 paper coordinates; source is the upper half and the solved rectangle is centered in the lower half",
+    "source_type": "project source code and engineering decision",
+    "confidence": "A+D",
+    "requires_physical_verification": true
+  },
+  "runtime_dependency": {
+    "additional_to_q1": "shapely>=2.0",
+    "source": "q2/puzzle_solver imports",
+    "confidence": "A",
+    "requires_jetson_verification": true
+  }
+}
