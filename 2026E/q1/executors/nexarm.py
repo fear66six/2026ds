@@ -44,22 +44,6 @@ class NexArmRobotExecutor:
         self.client = module.NexArmClient(self.config.nexarm_port)
         self.client.open()
         self.move_to_observe_pose()
-
-    def move_to_observe_pose(self) -> None:
-        if self.client is None:
-            raise RuntimeError("NexArm未初始化")
-        values = self.config.observe_pose
-        self._move_and_wait(
-            RobotPose(
-                float(values[0]),
-                float(values[1]),
-                float(values[2]),
-                float(values[3]),
-                float(values[4]),
-                float(values[5]),
-                int(values[6]),
-            )
-        )
         try:
             firmware = self.client.get_firmware_version(timeout=1.0)
             current = self.client.get_current_coords(timeout=1.0)
@@ -80,6 +64,22 @@ class NexArmRobotExecutor:
         except BaseException:
             self.close()
             raise
+
+    def move_to_observe_pose(self) -> None:
+        if self.client is None:
+            raise RuntimeError("NexArm未初始化")
+        values = self.config.observe_pose
+        self._move_and_wait(
+            RobotPose(
+                float(values[0]),
+                float(values[1]),
+                float(values[2]),
+                float(values[3]),
+                float(values[4]),
+                float(values[5]),
+                int(values[6]),
+            )
+        )
 
     @staticmethod
     def _coords_array(current) -> np.ndarray:
@@ -148,7 +148,6 @@ class NexArmRobotExecutor:
     def execute_single_move(self, plan: SingleMovePlan, magnet) -> ExecutionResult:
         required = (
             plan.source_pose_robot,
-            plan.approach_pose,
             plan.transfer_pose,
             plan.release_pose,
         )
@@ -158,7 +157,13 @@ class NexArmRobotExecutor:
         trajectory: list[str] = []
         phase_log: list[dict] = []
 
-        # 1) Send the source pose and wait for its configured motion duration.
+        if plan.cycle_index > 0:
+            phase_log.append(
+                {"phase": "RETURN_TO_BUFFER_BEFORE_PICK", "status": "COMMAND_SENT"}
+            )
+            self._move_and_wait(plan.transfer_pose)
+            trajectory.append("returned_to_buffer_before_pick")
+
         phase_log.append({"phase": "MOVE_TO_PICK", "status": "COMMAND_SENT"})
         self._move_and_wait(plan.source_pose_robot)
         phase_log.append(
@@ -170,9 +175,8 @@ class NexArmRobotExecutor:
                 "attempt": dict(self._active_motion_attempt or {}),
             }
         )
-        trajectory.append("direct_home_to_pick_pose_duration_elapsed")
+        trajectory.append("pick_pose_duration_elapsed")
 
-        # 2) Hold the magnet while the release-pose motion duration runs.
         phase_log.append({"phase": "MAGNET_ON", "status": "REQUESTED"})
         with magnet.hold_session():
             if self.config.magnet_settle_ms is None:
@@ -180,13 +184,12 @@ class NexArmRobotExecutor:
             time.sleep(self.config.magnet_settle_ms / 1000.0)
             magnet.assert_healthy()
             phase_log.append({"phase": "MAGNET_ON", "status": "CONFIRMED"})
-            phase_log.append({"phase": "LIFT_DIAGONALLY", "status": "COMMAND_SENT"})
-            self._move_and_wait(plan.approach_pose)
-            magnet.assert_healthy()
-            phase_log.append({"phase": "TRANSFER_TO_APEX", "status": "COMMAND_SENT"})
+            phase_log.append(
+                {"phase": "MOVE_TO_BUFFER_WITH_PIECE", "status": "COMMAND_SENT"}
+            )
             self._move_and_wait(plan.transfer_pose)
             magnet.assert_healthy()
-            phase_log.append({"phase": "DESCEND_DIAGONALLY", "status": "COMMAND_SENT"})
+            phase_log.append({"phase": "MOVE_TO_RELEASE", "status": "COMMAND_SENT"})
             self._move_and_wait(plan.release_pose)
             magnet.assert_healthy()
             phase_log.append(
@@ -198,7 +201,7 @@ class NexArmRobotExecutor:
                     "attempt": dict(self._active_motion_attempt or {}),
                 }
             )
-            trajectory.append("diagonal_lift_transfer_descent_duration_elapsed")
+            trajectory.append("buffer_then_release_pose_durations_elapsed")
         phase_log.append({"phase": "MAGNET_OFF", "status": "CONFIRMED"})
         if self.config.magnet_release_settle_ms is None:
             raise RuntimeError("缺少电磁铁释放稳定时间")

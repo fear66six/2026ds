@@ -96,7 +96,6 @@ def _apply_robot_fields(config: Q1RuntimeConfig, data: dict) -> None:
         "physical_pick_enabled",
         "pick_height",
         "release_height",
-        "transfer_apex_height",
         "move_duration_ms",
         "magnet_settle_ms",
         "magnet_release_settle_ms",
@@ -123,6 +122,13 @@ def _apply_robot_fields(config: Q1RuntimeConfig, data: dict) -> None:
         if len(origin) != 2:
             raise ValueError("target_origin_mm must have 2 numbers")
         config.target_origin_mm = (origin[0], origin[1])
+
+    raw_buffer = data.get("buffer_pose")
+    if raw_buffer is not None:
+        values = [float(value) for value in raw_buffer]
+        if len(values) != 7:
+            raise ValueError("buffer_pose must have 7 numbers")
+        config.buffer_pose = (*values[:6], int(values[6]))
 
     raw_home = data.get("home_pose")
     if raw_home is not None:

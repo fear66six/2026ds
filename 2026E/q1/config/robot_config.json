@@ -19,7 +19,7 @@
   "motion_calibration_status": "USER_VERIFIED_Z15_2026-07-30: operator confirms complete direct pick and release XY/Z/Pitch/Roll poses reached",
   "pick_height": -15.0,
   "release_height": -15.0,
-  "transfer_apex_height": 75.0,
+  "buffer_pose": [175.0, 0.0, 80.0, -90.0, 0.0, 0.0, 3000],
   "move_duration_ms": 6000,
   "position_tolerance_mm": 10.0,
   "orientation_tolerance_deg": 3.0,
@@ -40,9 +40,9 @@
     "paper_to_robot_matrix": "Fitted 2026-07-31 from landscape-image corners and user-measured robot XY: image TL/paper(0,0)->(328,139), image TR/paper(0,297)->(331,-130), image BL/paper(210,0)->(139,138), image BR/paper(210,297)->(132,-134). Affine least-squares residual about 2.61 mm RMS.",
     "wrist": "User: zero initial roll, clockwise positive, counter-clockwise negative. Software roll range limits were removed by user decision on 2026-07-30.",
     "heights": "User set pick_height/release_height to -15 on 2026-07-31 from physical measurement. This does not by itself verify magnetic pickup or final placement accuracy.",
-    "transfer": "Pick-to-release uses a diagonal arch: 25% XY at Z45, 60% XY at Z75, then diagonal descent to release Z-15. Roll is blended at the same fractions and the three segment durations sum to move_duration_ms=6000.",
+    "transfer": "Fixed BUFFER [175,0,80,-90,0,0,3000]: first piece HOME -> pick -> BUFFER -> release; later pieces release -> BUFFER -> pick -> BUFFER -> release; after the final release the arm returns directly to HOME.",
     "magnet": "STM32 USART1 application uses 115200 8N1 commands and a 50..500 ms timed MAGNET_ON lease. The by-id path ending 5B7A030191 is user-provided deployment data and must be rechecked on Jetson. Production sequence is pick-duration-elapsed -> MAGNET_ON/status-confirm -> release-duration-elapsed -> MAGNET_OFF/status-confirm. physical_pick_verified remains false until post-move visual evidence.",
-    "motion": "The first controller write after opening and read-only handshake is the direct HOME set_pose command; Q1 does not send CMD_SET_GLOBAL_ACC. Each pose advances after its configured 6000 ms duration because current NexArm coordinate/servo feedback is stale during confirmed physical motion.",
+    "motion": "The first controller write after opening is the direct HOME set_pose command; Q1 does not send CMD_SET_GLOBAL_ACC. HOME and BUFFER use 3000 ms, while pick and release use 6000 ms. The sequence advances after each configured duration because current NexArm coordinate/servo feedback is stale during confirmed physical motion.",
     "target_geometry": "The official Figure 2 template remains 100x60 mm. Run 20260731_012300_357937 measured the four fixed source polygons at 6375.18 mm2 versus the nominal 6000 mm2, giving a 1.0308 linear ratio. Q1 uses target_scale=1.03 for this physical four-piece set. The scaled 103x61.8 mm target is centered in the A4 lower/right half with origin [53.5,191.85] mm."
   },
   "_note": "Single active source for NexArm, camera and STM32 magnet endpoints, arm calibration, HOME, motion and planning parameters. Production Q1 is STM32-only; real energization still requires --confirm RUN_Q1. The main sequence uses configured pose durations instead of stale NexArm arrival feedback."

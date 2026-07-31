@@ -178,8 +178,6 @@ def test_magnet_starts_after_pick_duration(monkeypatch):
         "magnet_healthy",
         "move:2",
         "magnet_healthy",
-        "move:2",
-        "magnet_healthy",
         "move:5",
         "magnet_healthy",
         "magnet_off",

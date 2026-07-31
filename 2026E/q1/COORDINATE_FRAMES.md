@@ -160,7 +160,7 @@ release_roll = pick_roll + wrist_roll_sign * normalize(rotation_delta_deg)
 | `motion_mode` | 正式执行模式；当前必须为 `direct_pose` |
 | `pick_height` | 吸取高度 z |
 | `release_height` | 释放高度 z |
-| `transfer_apex_height` | 斜向拱形搬运的最高 z |
+| `buffer_pose` | 固定搬运缓冲位姿 `[x,y,z,pitch,roll,claw,duration_ms]` |
 | `move_duration_ms` | 单步 `set_pose` 时长 |
 | `magnet_settle_ms` | 吸合后等待 |
 | `home_pose` | **唯一**观察/拍照位，与复位 HOME 统一：`[x,y,z,pitch,roll,claw]` 或再加 `duration_ms` |

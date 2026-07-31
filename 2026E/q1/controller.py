@@ -128,7 +128,7 @@ class Q1Controller:
                 Q1State.EXECUTE_MOVE,
                 move_index,
                 move.template_id,
-                reason="pick -> magnet hold -> transfer -> release",
+                reason="buffer if needed -> pick -> buffer -> release",
             )
             self.magnet.ensure_off()
             result = self.robot.execute_single_move(move, self.magnet)
@@ -151,6 +151,13 @@ class Q1Controller:
             self._initialize_devices()
             scene = self._capture_and_plan()
             self._execute_move_queue()
+            if self.move_queue:
+                self._transition(
+                    Q1State.MOVE_TO_OBSERVE,
+                    len(self.move_queue),
+                    reason="return HOME after final release",
+                )
+                self.robot.move_to_observe_pose()
 
             self._transition(Q1State.COMPLETED, len(self.move_queue))
             self.recorder.write(

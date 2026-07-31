@@ -37,7 +37,6 @@ def configured_runtime(**overrides) -> Q1RuntimeConfig:
     for key in (
         "pick_height",
         "release_height",
-        "transfer_apex_height",
         "move_duration_ms",
         "magnet_settle_ms",
         "magnet_release_settle_ms",
@@ -48,6 +47,7 @@ def configured_runtime(**overrides) -> Q1RuntimeConfig:
         "vertex_max_error_mm",
     ):
         setattr(config, key, robot[key])
+    config.buffer_pose = tuple(robot["buffer_pose"])
     config.motion_mode = robot["motion_mode"]
     config.direct_pick_release_pose_verified = robot[
         "direct_pick_release_pose_verified"
@@ -284,20 +284,19 @@ def test_move_sequence_does_not_finish_before_command_duration(monkeypatch):
     assert executor._active_motion_attempt["result"] == "DURATION_ELAPSED"
 
 
-def test_executor_uses_planned_diagonal_transfer_targets():
+def test_executor_uses_fixed_buffer_before_and_after_later_pick():
     config = configured_runtime()
     executor = NexArmRobotExecutor(Q1_ROOT.parent, config)
     visited: list[float] = []
     executor._move_and_wait = lambda pose: visited.append(pose.x)
     executor._last_actual = np.array([10.0, 20.0, 226.0, -84.4, 0.0, 0.0])
-    approach = RobotPose(1, 0, 226, -84.4, 0, 0, 6000)
     source = RobotPose(2, 0, 25, -84.4, 0, 0, 6000)
     rotate = RobotPose(3, 0, 226, -84.4, 10, 0, 6000)
-    transfer = RobotPose(4, 0, 226, -84.4, 10, 0, 6000)
+    transfer = RobotPose(4, 0, 80, -90, 0, 0, 3000)
     release = RobotPose(5, 0, 25, -84.4, 10, 0, 6000)
     plan = SingleMovePlan(
-        0, "P1", PaperPose(1, 1), PaperPose(2, 2), source, release,
-        (1, 1), source, approach, transfer, release, 10, 1, "test", 0,
+        1, "P2", PaperPose(1, 1), PaperPose(2, 2), source, release,
+        (1, 1), source, None, transfer, release, 10, 1, "test", 0,
         rotate_pose=rotate,
     )
 
@@ -315,10 +314,11 @@ def test_executor_uses_planned_diagonal_transfer_targets():
 
     result = executor.execute_single_move(plan, FakeMagnet())
     assert result.ok
-    assert visited == [2, 1, 4, 5]
+    assert visited == [4, 2, 4, 5]
     assert result.details["trajectory_steps"] == [
-        "direct_home_to_pick_pose_duration_elapsed",
-        "diagonal_lift_transfer_descent_duration_elapsed",
+        "returned_to_buffer_before_pick",
+        "pick_pose_duration_elapsed",
+        "buffer_then_release_pose_durations_elapsed",
         "magnet_off_after_release_pose_duration",
     ]
     assert "real_arm_motion" not in result.details

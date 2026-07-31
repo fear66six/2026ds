@@ -167,6 +167,13 @@ def test_controller_captures_and_analyzes_once_then_executes_queue(
         "camera.capture:0",
         "analyzer.analyze:0",
     ]
+    assert events[-5:] == [
+        "robot.observe",
+        "magnet.emergency_off",
+        "robot.close",
+        "camera.close",
+        "magnet.close",
+    ]
     assert [path.name for path in controller.recorder.directory.glob("*.png")] == [
         "capture.png",
         "plan.png",
