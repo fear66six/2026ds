@@ -44,4 +44,15 @@ python3 -m q3.main run \
 ```
 
 The complete run uses the same HOME, pickup/release heights, roll compensation,
-transfer timing, serial endpoints and magnet lease as Q1.
+transfer timing, serial endpoints and magnet lease as Q1. Q3 deliberately loads
+`q1/config/robot_config.json` through `q1.calibration.ArmCoordinateMapper`, so the
+Q1 calibration updates in `e7e1a290` and `2febb608` also apply to every Q3 move:
+
+- the refitted paper-to-robot XY matrix is shared;
+- pickup and release Z follow `surface_z_plane_mm` relative to
+  `surface_z_ref_paper_mm`;
+- the active pickup/release reference heights and pickup XY offset are loaded
+  from the same file rather than duplicated in Q3.
+
+`q3/tests/test_q1_calibration_reuse.py` guards this shared contract and checks
+that Q3-generated pickup and release poses receive point-specific Z values.

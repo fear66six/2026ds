@@ -376,8 +376,9 @@
 
 ## F-039 Q1 纸面到机械臂标定已含接触面 Z 平面
 
-- 结论：2026-07-31 晚间四点触地测量拟合得到新 `paper_to_robot_matrix` 与 `surface_z_plane_mm`。纸面中心映射约 `(240.0, 8.5)`；接触面 `z≈0.0643·x − 0.00505·y − 33.25`。`pick_height`/`release_height` 在参考点 `(105,148.5)` 为绝对 Z（当前 -10/-8），其它点随平面倾斜（例如同名义高度 -10 下 TL≈-16、BL≈-2.5）。
-- 来源：用户四点 XYZ 与图像像素（D）；`2026E/q1/config/robot_config.json`、`calibration.py`、`source_facts.json::q1_arm_calibration`（A）。
+- 结论：2026-07-31 晚间四点触地测量拟合得到新 `paper_to_robot_matrix` 与 `surface_z_plane_mm`。纸面中心映射约 `(240.0, 8.5)`。`ArmCoordinateMapper.paper_to_robot` 在加载平面后对 3×3 矩阵路径按 `z=height+(plane(x,y)-plane(ref))` 补偿接触面倾斜；`pick_height`/`release_height` 只表示参考点 `(105,148.5)` 的绝对 Z。
+- 现行参数：以 `2026E/q1/config/robot_config.json` 为准（当前平面约 `[0.04,-0.005,-33.25]`，`pick_height=-12`，`release_height=-8`）。原始四点最小二乘斜率约 `0.0643` 已在 `2febb608` 及后续微调中下调。
+- 来源：用户四点 XYZ 与图像像素（D）；`calibration.py`、`source_facts.json::q1_arm_calibration`（A）。
 - 可信等级：A+D；是否需要实机验证：需要。
 - 最后核查时间：2026-07-31。
 
@@ -385,6 +386,6 @@
 
 - 赛题事实：`docs/E题_拼图装置.pdf` 第 2 页规定现场碎片不超过 4 片、每片不超过 5 边、每边不小于 20 mm、每片至少一边属于外框，成品矩形长边为 90–120 mm、短边为 50–90 mm；扑克牌题还要求牌面花纹对应。来源类型为正式赛题资料，可信等级 B。
 - 算法事实：`2026E/q3/card_solver` 来自 `2026E-7.31/q3/card_solver`；除 `image_input.py` 新增“接收已矫正 A4 图”适配器及 `__init__.py` 导出外，其余算法文件保持同源。`CardPuzzleSolver` 使用无缩放、无镜像的刚体搜索，并以 Lab、红黑前景、线连续性、角标和对称性评价花纹拼接。来源类型为源码，可信等级 A。
-- 集成事实：`q3/analyzer.py::CardSceneAnalyzer.analyze` 复用 Q1 的 `detect_paper/rectify_paper`，将横拍 A4 统一为 `210×297 mm` 竖向纸面坐标；`q3/motion.py::plan_card_moves` 将求解结果转成 Q1 `SingleMovePlan`。相机、手眼标定、最大内接吸点、NexArm executor、摆臂 roll 补偿、STM32 磁铁会话及 `q1/config/robot_config.json` 均直接复用。
-- 离线证据：正式算法副本通过队友可用测试 `22 passed, 11 skipped`；合成图得到 4 片、约 `99.12×69.21 mm` 成品、4 个完整动作和 `capture.png/plan.png/scene.json/piece_moves.json`；Mock 控制器完成初始化、单次拍照、4 片执行、最终 HOME 和关闭。可信等级 A；实机成像、抓放及花纹方向仍需验证。
+- 集成事实：`q3/analyzer.py::CardSceneAnalyzer.analyze` 复用 Q1 的 `detect_paper/rectify_paper`，将横拍 A4 统一为 `210×297 mm` 竖向纸面坐标；`q3/motion.py::plan_card_moves` 将求解结果转成 Q1 `SingleMovePlan`。相机、手眼标定（含 `surface_z_plane_mm`）、最大内接吸点、NexArm executor、摆臂 roll 补偿、STM32 磁铁会话及 `q1/config/robot_config.json` 均直接复用，不在 Q3 内复制矩阵或高度。
+- 离线证据：正式算法副本通过队友可用测试 `22 passed, 11 skipped`；合成图得到 4 片、约 `99.12×69.21 mm` 成品、4 个完整动作和 `capture.png/plan.png/scene.json/piece_moves.json`；Mock 控制器完成初始化、单次拍照、4 片执行、最终 HOME 和关闭；`q3/tests/test_q1_calibration_reuse.py` 确认 Q3 规划位姿继承最新接触面 Z 补偿。可信等级 A；实机成像、抓放及花纹方向仍需验证。
 - 最后核查时间：2026-07-31。

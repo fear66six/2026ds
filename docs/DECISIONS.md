@@ -436,10 +436,11 @@
 
 ## D-049 Q1 四角重标定并启用接触面 Z 平面
 
-- 决策：用 2026-07-31 晚间用户尖端触地四点重拟合 `paper_to_robot_matrix`；新增 `surface_z_plane_mm=[a,b,c]` 与 `surface_z_ref_paper_mm=[105,148.5]`。`pick_height`/`release_height` 仍表示参考点绝对 Z（当前 -10/-8）；其它纸面点按 `z=height+(plane(x,y)-plane(ref))` 跟随桌面倾斜。吸取 XY 偏置清零，待新矩阵实机偏差后再单独加回。
+- 决策：用 2026-07-31 晚间用户尖端触地四点重拟合 `paper_to_robot_matrix`；新增 `surface_z_plane_mm=[a,b,c]` 与 `surface_z_ref_paper_mm=[105,148.5]`。`pick_height`/`release_height` 仍表示参考点绝对 Z；其它纸面点按 `z=height+(plane(x,y)-plane(ref))` 跟随桌面倾斜。吸取 XY 偏置清零，待新矩阵实机偏差后再单独加回。
 - 原因：远近端触地 Z 相差约 15 mm，固定吸取高度使远端间隙过大、近端过低，影响磁吸。
 - 依据：用户提供图像四角像素与机器人 XYZ（D）；`q1/calibration.py` 仿射/平面最小二乘与离线测试（A）。
-- 当前状态：XY RMS≈4.03 mm（非仿射角点不一致）；Z 平面 RMS≈0.25 mm。尚未用该标定做物理抓放验证。
+- 当前状态：XY RMS≈4.03 mm（非仿射角点不一致）。`2febb608` 起将平面 paper-x 斜率从原始最小二乘约 `0.0643` 下调，并继续微调 `pick_height`；现行值以 `q1/config/robot_config.json` 为准。尚未用该标定做物理抓放验证。
+- Q3 同步：不复制标定文件或矩阵；`q3.main` / `q3.motion` 直接加载同一 `robot_config.json` 与 `ArmCoordinateMapper`，故 XY 重拟合与接触面 Z 平面对 Q3 抓放同样生效。验证见 `q3/tests/test_q1_calibration_reuse.py`。
 
 ## D-050 Q3 只替换扑克牌识别求解层并复用 Q1 控制链
 
@@ -447,4 +448,4 @@
 - 目标布局：横拍图经 Q1 矫正后，原图左侧源区对应标准纸面上半区，原图右侧目标区对应下半区。求解后的完整牌保持长边沿标准纸面纵向，并居中放入目标半区；每片按面积从大到小执行。
 - 依赖：保留队友算法的运行依赖 `shapely>=2.0`，不把仅用于演示、动画和测试的 matplotlib、Pillow、pytest 引入生产入口。
 - 依据：正式赛题第 2 页（B）；`2026E-7.31/q3/card_solver`、`2026E/q3`、`2026E/q1` 源码（A）；用户要求除拼接算法外与 Q1 保持一致（D）。
-- 当前状态：本地集成、算法回归、合成全链规划和 Mock 控制器已通过；未上传 Jetson，未连接真实串口，未运动机械臂，未给电磁铁通电。
+- 当前状态：本地集成、算法回归、合成全链规划和 Mock 控制器已通过；`e7e1a290`/`2febb608` 的纸面 XY 与接触面 Z 优化经共享配置对 Q3 生效并由离线测试锁定。未上传 Jetson，未连接真实串口，未运动机械臂，未给电磁铁通电。

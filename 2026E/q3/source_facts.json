@@ -47,6 +47,32 @@
     "confidence": "A+D",
     "requires_physical_verification": true
   },
+  "q1_calibration_sync": {
+    "q1_commits": [
+      "e7e1a290",
+      "2febb608"
+    ],
+    "shared_contract": [
+      "q3.main defaults to q1/config/robot_config.json",
+      "q3.main applies Q1 robot fields to Q3RuntimeConfig",
+      "q3.motion maps pickup and release through q1.calibration.ArmCoordinateMapper",
+      "surface_z_plane_mm therefore adjusts every Q3 low pose by its paper position"
+    ],
+    "active_reference_values": {
+      "note": "Live numbers are always read from q1/config/robot_config.json; Q3 must not duplicate them.",
+      "pick_height": -12.0,
+      "release_height": -8.0,
+      "pick_robot_xy_offset_mm": [0.0, 0.0],
+      "surface_z_plane_mm": [0.04, -0.005, -33.25],
+      "surface_z_ref_paper_mm": [105.0, 148.5],
+      "paper_center_robot_xy": [240.0, 8.5]
+    },
+    "verification": "q3/tests/test_q1_calibration_reuse.py",
+    "source": "2026E/q3/main.py::_load_runtime; 2026E/q3/motion.py::_build_move; 2026E/q1/calibration.py::ArmCoordinateMapper; 2026E/q1/config/robot_config.json",
+    "source_type": "project source code and user calibration",
+    "confidence": "A+D",
+    "requires_physical_verification": true
+  },
   "offline_validation": {
     "upstream_regression": "22 passed, 11 skipped; tests forced to import 2026E/q3/card_solver",
     "synthetic_pipeline": "Q1 paper detection, Q3 detection/solve and Q1 motion planning produced four moves and capture.png, plan.png, scene.json and piece_moves.json",
