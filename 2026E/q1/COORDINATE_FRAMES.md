@@ -125,8 +125,12 @@ world_mm = template_local_cm * 10 + target_origin_mm
 |---|---|---|
 | `paper_to_robot_matrix` | 3×3 或 4×4 | `ArmCoordinateMapper.paper_to_robot` |
 
-- **3×3**：`[rx, ry, w]^T = H · [x_mm, y_mm, 1]^T`，再齐次归一；`z` 直接用配置高度
+- **3×3**：`[rx, ry, w]^T = H · [x_mm, y_mm, 1]^T`，再齐次归一；`z` 默认用配置高度
 - **4×4**：`[rx, ry, rz, w]^T = H · [x_mm, y_mm, z_mm, 1]^T`
+- **`surface_z_plane_mm=[a,b,c]`**（可选）：接触面 `z_contact = a·x_mm + b·y_mm + c`。存在时，
+  `pick_height` / `release_height` 表示 `surface_z_ref_paper_mm`（默认纸面中心 `[105,148.5]`）处的
+  **绝对**机器人 Z；其它点使用  
+  `z = height + (plane(x,y) - plane(ref))`，以跟随桌面/坐标系倾斜。
 
 无矩阵或文件不存在 → 禁止 RealRun。
 
@@ -158,8 +162,10 @@ release_roll = pick_roll + wrist_roll_sign * normalize(rotation_delta_deg)
 | 字段 | 用途 |
 |---|---|
 | `motion_mode` | 正式执行模式；当前必须为 `direct_pose` |
-| `pick_height` | 吸取高度 z |
-| `release_height` | 释放高度 z |
+| `pick_height` | 吸取高度 z；有 `surface_z_plane_mm` 时为参考点绝对 Z |
+| `release_height` | 释放高度 z；有平面时同上 |
+| `surface_z_plane_mm` | 接触面平面系数 `[a,b,c]` |
+| `surface_z_ref_paper_mm` | 高度参考纸面点，默认 `[105,148.5]` |
 | `buffer_pose` | 固定搬运缓冲位姿 `[x,y,z,pitch,roll,claw,duration_ms]` |
 | `move_duration_ms` | 单步 `set_pose` 时长 |
 | `magnet_settle_ms` | 吸合后等待 |
@@ -169,7 +175,7 @@ release_roll = pick_roll + wrist_roll_sign * normalize(rotation_delta_deg)
 | `nexarm_port` | 固定 NexArm by-id 设备路径 |
 
 当前 HOME/观察位为 `(175,0,210,-90,0,0)`，时长 3000 ms，到位位置容差
-10 mm。吸取和释放高度均为 Z=-15，搬运拱顶为 Z=75。
+10 mm。吸取/释放名义高度为 Z=-10 / Z=-8（纸面中心参考），并随接触面平面倾斜。
 
 ## 6. 单步规划用的参考点
 

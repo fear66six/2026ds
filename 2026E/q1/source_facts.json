@@ -28,15 +28,18 @@
     "confidence": "A"
   },
     "q1_arm_calibration": {
-    "image_corners_px": [[136, 16], [1112, 10], [133, 703], [1114, 707]],
+    "image_corners_px": [[111, 1], [1116, 2], [120, 697], [1120, 691]],
     "paper_corners_mm": [[0, 0], [0, 297], [210, 0], [210, 297]],
-    "robot_xy": [[328, 139], [331, -130], [139, 138], [132, -134]],
-    "fit": "3x3 homogeneous affine least squares",
-    "rms_residual_mm": 2.6100766272,
-    "paper_center_robot_xy": [232.5, 3.25],
-    "source": "User measurements 2026-07-31; q1/config/robot_config.json::paper_to_robot_matrix",
+    "robot_xyz": [[335, 152, -33], [345, -132, -35], [143, 148, -20], [137, -134, -21]],
+    "fit": "3x3 homogeneous affine least squares for XY; separate least-squares plane for contact Z",
+    "rms_residual_xy_mm": 4.031128874149282,
+    "rms_residual_z_mm": 0.25,
+    "paper_center_robot_xy": [240.0, 8.5],
+    "surface_z_plane_mm": [0.06428571428571239, -0.005050505050504112, -33.25],
+    "surface_z_ref_paper_mm": [105.0, 148.5],
+    "source": "User tip-down corner measurements 2026-07-31 evening; q1/config/robot_config.json",
     "confidence": "A+D",
-    "note": "The updated matrix has passed offline recognition and four-piece planning on 0cfcb4c024981bd1d47b4a83a06af8a8.png but has not yet been used for a physical pick/place run."
+    "note": "XY residual ~4 mm RMS is dominated by non-affine corner inconsistency (+/-4 mm in robot X). Z plane residual is 0.25 mm RMS. pick_height/release_height stay absolute at the paper-center reference and follow the plane elsewhere. Physical pick/place with this matrix is still pending."
   },
   "q1_target_geometry": {
     "official_template_mm": [100.0, 60.0],
@@ -51,13 +54,13 @@
   },
   "q1_pick_point": {
     "method": "maximum-clearance interior point of the detected polygon at 0.25 mm raster resolution",
-    "pick_robot_xy_offset_mm": [5.0, 5.0],
-    "source": "runs 20260730_232827_207582, 20260730_233201_481210 and 20260730_233351_970591; q1/geometry.py::polygon_maximum_clearance_point; user physical XY correction",
+    "pick_robot_xy_offset_mm": [0.0, 0.0],
+    "source": "runs 20260730_232827_207582, 20260730_233201_481210 and 20260730_233351_970591; q1/geometry.py::polygon_maximum_clearance_point; reset with 2026-07-31 evening corner recalibration",
     "confidence": "A+D",
-    "note": "Across the three runs P4 boundary clearance changes from 0.45..2.12 mm at the old detected center to 19.77..20.48 mm. The +5 mm robot correction applies only to pickup, not release or the paper calibration matrix."
+    "note": "Across the three runs P4 boundary clearance changes from 0.45..2.12 mm at the old detected center to 19.77..20.48 mm. Pickup XY bias was cleared when the corner matrix was refit; reintroduce only after a new physical miss."
   },
   "q1_transfer_trajectory": {
-    "low_pose_height_source": "q1/config/robot_config.json::pick_height/release_height",
+    "low_pose_height_source": "q1/config/robot_config.json::pick_height/release_height plus surface_z_plane_mm",
     "sequence": [
       "pick_ready",
       "descend_pick",

@@ -433,3 +433,10 @@
 - 参数：`approach_dz=40 mm`、`transit_z=120 mm`、move/descend/lift/rotate 基准时长为 `1500/800/800/1200 ms`，每条动作后 settle 为 `200 ms`；独立 roll 小于 `1°` 时跳过，否则按归一化角差缩放旋转时长。HOME、吸放低位、`+5/+5 mm` 吸点修正、摆臂补偿、四片顺序及 STM32 续租保持不变。
 - 依据：`pintu/jetson_to_nexarm/puzzle_runner.py::PuzzlePickPlaceRunner.execute_one,_rotate_duration_ms` 和 `arm_controller.py::_wait_arrival`（A）；当前 `q1/motion.py`、`q1/executors/nexarm.py`（A）；用户要求以队友实机效果更好的 `puzzle_runner.py` 重构 transfer（D）。
 - 验证：三组实拍均完成四片离线规划；Mock 确认非零 roll 单片下发八条 `set_pose`，磁铁严格在 pick 低位后开启、place 低位后关闭。尚未同步 Jetson，尚未执行机械臂或电磁铁。
+
+## D-049 Q1 四角重标定并启用接触面 Z 平面
+
+- 决策：用 2026-07-31 晚间用户尖端触地四点重拟合 `paper_to_robot_matrix`；新增 `surface_z_plane_mm=[a,b,c]` 与 `surface_z_ref_paper_mm=[105,148.5]`。`pick_height`/`release_height` 仍表示参考点绝对 Z（当前 -10/-8）；其它纸面点按 `z=height+(plane(x,y)-plane(ref))` 跟随桌面倾斜。吸取 XY 偏置清零，待新矩阵实机偏差后再单独加回。
+- 原因：远近端触地 Z 相差约 15 mm，固定吸取高度使远端间隙过大、近端过低，影响磁吸。
+- 依据：用户提供图像四角像素与机器人 XYZ（D）；`q1/calibration.py` 仿射/平面最小二乘与离线测试（A）。
+- 当前状态：XY RMS≈4.03 mm（非仿射角点不一致）；Z 平面 RMS≈0.25 mm。尚未用该标定做物理抓放验证。

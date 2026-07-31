@@ -4,6 +4,9 @@
 # External reference tree: never commit; treat as immutable (read-only)
 /pintu/
 
+# Local snapshot / reference tree (not part of active 2026E)
+/2026E-7.31/
+
 # Local vendor/reference archive (large, immutable, and redistributability varies)
 /docs/**
 !/docs/README.md

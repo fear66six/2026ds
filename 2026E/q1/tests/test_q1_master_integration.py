@@ -62,15 +62,27 @@ def configured_runtime(**overrides) -> Q1RuntimeConfig:
 def test_paper_to_robot_four_corners_and_center():
     mapper = ArmCoordinateMapper(ROBOT_CONFIG)
     expected = {
-        (0.0, 0.0): (330.5, 139.75),
-        (0.0, 297.0): (328.5, -130.75),
-        (210.0, 0.0): (136.5, 137.25),
-        (210.0, 297.0): (134.5, -133.25),
-        (105.0, 148.5): (232.5, 3.25),
+        (0.0, 0.0): (339.0, 151.5),
+        (0.0, 297.0): (341.0, -131.5),
+        (210.0, 0.0): (139.0, 148.5),
+        (210.0, 297.0): (141.0, -134.5),
+        (105.0, 148.5): (240.0, 8.5),
     }
     for paper, robot in expected.items():
         pose = mapper.paper_to_robot(*paper, 100.0)
         assert (pose.x, pose.y) == pytest.approx(robot, abs=1e-6)
+
+
+def test_surface_z_plane_offsets_from_paper_center():
+    mapper = ArmCoordinateMapper(ROBOT_CONFIG)
+    center = mapper.paper_to_robot(105.0, 148.5, -10.0)
+    assert center.z == pytest.approx(-10.0, abs=1e-6)
+    top_left = mapper.paper_to_robot(0.0, 0.0, -10.0)
+    bottom_left = mapper.paper_to_robot(210.0, 0.0, -10.0)
+    # Contact plane is lower (more negative) at small paper-x / far robot-x.
+    assert top_left.z == pytest.approx(-16.0, abs=0.05)
+    assert bottom_left.z == pytest.approx(-2.5, abs=0.05)
+    assert top_left.z < center.z < bottom_left.z
 
 
 def test_landscape_paper_uses_known_halfway_divider():
@@ -122,11 +134,11 @@ def test_robot_parameters_are_consolidated_and_direct_pose_is_required():
         "nexarm_port",
         "home_pose",
         "paper_to_robot_matrix",
+        "surface_z_plane_mm",
         "wrist_roll_zero_deg",
         "motion_mode",
         "pick_height",
         "release_height",
-        "move_duration_ms",
         "position_tolerance_mm",
     }
     assert required <= robot.keys()
@@ -135,8 +147,11 @@ def test_robot_parameters_are_consolidated_and_direct_pose_is_required():
     assert robot["direct_pick_release_pose_verified"] is True
     assert robot["physical_pick_verified"] is False
     assert robot["home_pose"] == [175.0, 0.0, 210.0, -90.0, 0.0, 0.0, 3000]
-    assert robot["pick_height"] == -15.0
-    assert robot["release_height"] == -15.0
+    assert robot["pick_height"] == -10.0
+    assert robot["release_height"] == -8.0
+    assert len(robot["surface_z_plane_mm"]) == 3
+    assert robot["surface_z_ref_paper_mm"] == [105.0, 148.5]
+    assert "move_duration_ms" not in robot
     assert "workspace_limits" not in robot
     assert "wrist_roll_min_deg" not in robot
     assert "wrist_roll_max_deg" not in robot
