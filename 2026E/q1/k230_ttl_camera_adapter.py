@@ -48,8 +48,6 @@ class K230TtlQ1Camera:
 
         self._cam = K230TtlSnapshotCamera(port=self.port)
         self._cam.initialize()
-        if not self._cam.health_check():
-            raise RuntimeError("CAPTURE_FAILED: K230 TTL health_check failed")
 
     def read_preview(self) -> np.ndarray | None:
         if self._cam is None:

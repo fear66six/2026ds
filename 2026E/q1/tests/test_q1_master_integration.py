@@ -87,10 +87,11 @@ def test_landscape_paper_uses_known_halfway_divider():
 
 def test_wrist_sign_mapping_has_no_software_range_limit():
     mapper = ArmCoordinateMapper(ROBOT_CONFIG)
+    assert mapper.wrist_roll_sign == pytest.approx(-1.0)
     assert mapper.map_in_plane_rotation(0).release_roll_deg == pytest.approx(0)
-    assert mapper.map_in_plane_rotation(30).release_roll_deg == pytest.approx(30)
-    assert mapper.map_in_plane_rotation(-30).release_roll_deg == pytest.approx(-30)
-    assert mapper.map_in_plane_rotation(30, pick_roll_deg=720).release_roll_deg == 750
+    assert mapper.map_in_plane_rotation(30).release_roll_deg == pytest.approx(-30)
+    assert mapper.map_in_plane_rotation(-30).release_roll_deg == pytest.approx(30)
+    assert mapper.map_in_plane_rotation(30, pick_roll_deg=720).release_roll_deg == 690
 
 
 def test_sim_is_rejected_and_stm32_requires_port():
@@ -221,6 +222,9 @@ class NexArmClient:
     def close(self): pass
     def flush_input_buffer(self): return 0
     def set_pose(self, *values): self.write_commands.append(("set_pose", values))
+    def get_ikine_servo_positions(self, *values, timeout=0.5):
+        self.write_commands.append(("get_ikine_servo_positions",))
+        return (1, 2, 3, 4, 5, 6)
     def get_firmware_version(self, timeout):
         self.write_commands.append(("get_firmware_version",))
         return "1.0.0"
@@ -246,31 +250,44 @@ class NexArmClient:
     executor.initialize()
     assert executor.client.write_commands[0][0] == "set_pose"
     assert executor.client.write_commands[0][1][-1] == 3000
-    assert [item[0] for item in executor.client.write_commands[1:]] == [
-        "get_firmware_version",
-        "get_current_coords",
-    ]
-    assert executor._initial_status["firmware_version"] == "1.0.0"
-    assert executor._initial_status["initial_pose"] == [
-        173.0,
-        4.0,
-        226.0,
-        -84.4,
-        0.0,
-        0.0,
-    ]
+    assert executor.client.write_commands[1][0] == "get_ikine_servo_positions"
+    assert all(
+        item[0] == "get_current_coords"
+        for item in executor.client.write_commands[2:]
+    )
+    assert executor._initial_status["home_target_reached"] is True
     assert "global_acceleration" not in executor._initial_status
 
 
-def test_move_sequence_does_not_finish_before_command_duration(monkeypatch):
+def test_move_sequence_reaches_when_target_servos_stable(monkeypatch):
     config = configured_runtime()
+    config.idle_stable_samples = 3
     executor = NexArmRobotExecutor(Q1_ROOT.parent, config)
     target = np.array([173.0, 4.0, 226.0, -84.4, 0.0, 0.0])
+    servos = (2000, 2100, 2200, 2300, 2048, 2048)
     clock = [0.0]
 
     class FakeClient:
         def set_pose(self, *_values):
             return None
+
+        def get_ikine_servo_positions(self, *_values, timeout=0.5):
+            return servos
+
+        def get_current_coords(self, timeout=0.5):
+            return SimpleNamespace(
+                x=target[0],
+                y=target[1],
+                z=target[2],
+                pitch=target[3],
+                roll=target[4],
+                claw=target[5],
+                servo_positions=servos,
+                meta={
+                    "request_started_s": clock[0],
+                    "response_received_s": clock[0] + 0.01,
+                },
+            )
 
     monkeypatch.setattr(nexarm_module.time, "monotonic", lambda: clock[0])
     monkeypatch.setattr(
@@ -280,8 +297,7 @@ def test_move_sequence_does_not_finish_before_command_duration(monkeypatch):
     )
     executor.client = FakeClient()
     executor._move_and_wait(RobotPose(*target.tolist(), 6000))
-    assert clock[0] >= 6.0
-    assert executor._active_motion_attempt["result"] == "DURATION_ELAPSED"
+    assert executor._active_motion_attempt["result"] == "TARGET_REACHED"
 
 
 def test_executor_uses_fixed_buffer_before_and_after_later_pick():
@@ -317,9 +333,9 @@ def test_executor_uses_fixed_buffer_before_and_after_later_pick():
     assert visited == [4, 2, 4, 5]
     assert result.details["trajectory_steps"] == [
         "returned_to_buffer_before_pick",
-        "pick_pose_duration_elapsed",
-        "buffer_then_release_pose_durations_elapsed",
-        "magnet_off_after_release_pose_duration",
+        "pick_pose_reached",
+        "buffer_then_release_pose_reached",
+        "magnet_off_after_release_pose_reached",
     ]
     assert "real_arm_motion" not in result.details
     assert result.details["physical_evidence"] == "UNPROVEN"

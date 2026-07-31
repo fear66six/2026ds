@@ -15,6 +15,8 @@ from ..runtime_config import Q1RuntimeConfig
 SDK_RELATIVE_PATH = Path(
     "hardware/nexarm/jetson_to_nexarm/nexarm_sdk.py"
 )
+POST_MOVE_SETTLE_S = 1.0
+
 
 class NexArmRobotExecutor:
     def __init__(self, project_root: Path, config: Q1RuntimeConfig) -> None:
@@ -27,7 +29,6 @@ class NexArmRobotExecutor:
         self._last_feedback_meta: dict | None = None
         self._initial_status: dict | None = None
         self._last_command_started_s: float | None = None
-        self._last_command_duration_s: float = 0.0
         self._motion_attempts: list[dict] = []
         self._active_motion_attempt: dict | None = None
 
@@ -43,21 +44,13 @@ class NexArmRobotExecutor:
         spec.loader.exec_module(module)
         self.client = module.NexArmClient(self.config.nexarm_port)
         self.client.open()
-        self.move_to_observe_pose()
         try:
-            firmware = self.client.get_firmware_version(timeout=1.0)
-            current = self.client.get_current_coords(timeout=1.0)
-            initial = self._coords_array(current)
-            if not np.all(np.isfinite(initial)):
-                raise RuntimeError(f"invalid initial pose feedback: {initial.tolist()}")
-            self._last_actual = initial.copy()
-            self._last_servos = tuple(
-                int(value) for value in getattr(current, "servo_positions", ())
-            )
-            self._last_feedback_meta = dict(getattr(current, "meta", {}) or {})
+            self.move_to_observe_pose()
             self._initial_status = {
-                "firmware_version": firmware,
-                "initial_pose": initial.tolist(),
+                "home_target_reached": True,
+                "initial_pose": None
+                if self._last_actual is None
+                else self._last_actual.tolist(),
                 "initial_servo_positions": list(self._last_servos),
                 "feedback_meta": self._last_feedback_meta,
             }
@@ -115,7 +108,6 @@ class NexArmRobotExecutor:
             dtype=np.float64,
         )
         self._last_command_started_s = time.monotonic()
-        self._last_command_duration_s = pose.duration_ms / 1000.0
         self._active_motion_attempt = {
             "target": self._last_pose.tolist(),
             "duration_ms": int(pose.duration_ms),
@@ -134,16 +126,31 @@ class NexArmRobotExecutor:
         remaining_s = max(0.0, command_started + duration_s - time.monotonic())
         if remaining_s > 0:
             time.sleep(remaining_s)
+        time.sleep(POST_MOVE_SETTLE_S)
         if self._active_motion_attempt is not None:
-            self._active_motion_attempt["result"] = "DURATION_ELAPSED"
-            self._active_motion_attempt["telemetry_outcome"] = (
-                "NOT_USED_FOR_SEQUENCE_CONTROL"
+            self._active_motion_attempt.update(
+                {
+                    "result": "DURATION_AND_SETTLE_ELAPSED",
+                    "telemetry_outcome": "NOT_USED_FOR_SEQUENCE_CONTROL",
+                    "physical_evidence": "UNPROVEN",
+                    "post_move_settle_s": POST_MOVE_SETTLE_S,
+                    "elapsed_s": round(
+                        max(0.0, time.monotonic() - command_started), 3
+                    ),
+                }
             )
-            self._active_motion_attempt["physical_evidence"] = "UNPROVEN"
-            self._active_motion_attempt["elapsed_s"] = round(
-                max(0.0, time.monotonic() - command_started),
-                3,
-            )
+
+    @staticmethod
+    def _transfer_pose_with_roll(pose: RobotPose, roll: float) -> RobotPose:
+        return RobotPose(
+            pose.x,
+            pose.y,
+            pose.z,
+            pose.pitch,
+            float(roll),
+            pose.claw,
+            pose.duration_ms,
+        )
 
     def execute_single_move(self, plan: SingleMovePlan, magnet) -> ExecutionResult:
         required = (
@@ -156,26 +163,32 @@ class NexArmRobotExecutor:
         magnet_event_start = len(getattr(magnet, "events", []))
         trajectory: list[str] = []
         phase_log: list[dict] = []
+        pick_transfer_pose = self._transfer_pose_with_roll(
+            plan.transfer_pose, plan.source_pose_robot.roll
+        )
+        release_transfer_pose = self._transfer_pose_with_roll(
+            plan.transfer_pose, plan.release_pose.roll
+        )
 
         if plan.cycle_index > 0:
             phase_log.append(
                 {"phase": "RETURN_TO_BUFFER_BEFORE_PICK", "status": "COMMAND_SENT"}
             )
-            self._move_and_wait(plan.transfer_pose)
+            self._move_and_wait(pick_transfer_pose)
             trajectory.append("returned_to_buffer_before_pick")
 
         phase_log.append({"phase": "MOVE_TO_PICK", "status": "COMMAND_SENT"})
         self._move_and_wait(plan.source_pose_robot)
         phase_log.append(
             {
-                "phase": "PICK_POSE_DURATION_ELAPSED",
+                "phase": "PICK_POSE_WAIT_COMPLETED",
                 "status": self._active_motion_attempt.get("result")
                 if self._active_motion_attempt
                 else "UNKNOWN",
                 "attempt": dict(self._active_motion_attempt or {}),
             }
         )
-        trajectory.append("pick_pose_duration_elapsed")
+        trajectory.append("pick_pose_duration_and_settle_elapsed")
 
         phase_log.append({"phase": "MAGNET_ON", "status": "REQUESTED"})
         with magnet.hold_session():
@@ -187,30 +200,30 @@ class NexArmRobotExecutor:
             phase_log.append(
                 {"phase": "MOVE_TO_BUFFER_WITH_PIECE", "status": "COMMAND_SENT"}
             )
-            self._move_and_wait(plan.transfer_pose)
+            self._move_and_wait(release_transfer_pose)
             magnet.assert_healthy()
             phase_log.append({"phase": "MOVE_TO_RELEASE", "status": "COMMAND_SENT"})
             self._move_and_wait(plan.release_pose)
             magnet.assert_healthy()
             phase_log.append(
                 {
-                    "phase": "RELEASE_POSE_DURATION_ELAPSED",
+                    "phase": "RELEASE_POSE_WAIT_COMPLETED",
                     "status": self._active_motion_attempt.get("result")
                     if self._active_motion_attempt
                     else "UNKNOWN",
                     "attempt": dict(self._active_motion_attempt or {}),
                 }
             )
-            trajectory.append("buffer_then_release_pose_durations_elapsed")
+            trajectory.append("buffer_then_release_duration_and_settle_elapsed")
         phase_log.append({"phase": "MAGNET_OFF", "status": "CONFIRMED"})
         if self.config.magnet_release_settle_ms is None:
             raise RuntimeError("缺少电磁铁释放稳定时间")
         time.sleep(self.config.magnet_release_settle_ms / 1000.0)
-        trajectory.append("magnet_off_after_release_pose_duration")
+        trajectory.append("magnet_off_after_release_wait")
         return ExecutionResult(
             True,
             plan.template_id,
-            "trajectory durations elapsed; physical pick still requires visual verification",
+            "trajectory duration and post-move settle completed before magnet switching",
             False,
             {
                 "magnet_backend": self.config.magnet_backend,

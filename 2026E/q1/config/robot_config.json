@@ -11,7 +11,7 @@
     [0.0, 0.0, 1.0]
   ],
   "wrist_roll_zero_deg": 0.0,
-  "wrist_roll_sign": 1.0,
+  "wrist_roll_sign": -1.0,
   "default_pitch_deg": -84.4,
   "default_claw": 0.0,
   "motion_mode": "direct_pose",
@@ -20,11 +20,10 @@
   "pick_height": -15.0,
   "release_height": -15.0,
   "buffer_pose": [175.0, 0.0, 80.0, -90.0, 0.0, 0.0, 3000],
-  "move_duration_ms": 6000,
+  "move_duration_ms": 4000,
   "position_tolerance_mm": 10.0,
   "orientation_tolerance_deg": 3.0,
   "stable_samples": 3,
-  "motion_timeout_s": 12.0,
   "vertex_max_error_mm": 8.0,
   "target_scale": 1.03,
   "target_origin_mm": [53.5, 191.85],
@@ -38,12 +37,12 @@
     "home_pose": "User selected project HOME [175,0,210,-90,0,0] for the complete-paper view. On 2026-07-31 HOME duration was set to 3000 ms independently of the 6000 ms pick/release duration, and run startup was reordered so HOME is the first NexArm protocol write after opening the serial port.",
     "position_tolerance_mm": "User approved 10 mm after repeat stable feedback [168,5,219,-86.7,0,0] produced 8.66 mm position error",
     "paper_to_robot_matrix": "Fitted 2026-07-31 from landscape-image corners and user-measured robot XY: image TL/paper(0,0)->(328,139), image TR/paper(0,297)->(331,-130), image BL/paper(210,0)->(139,138), image BR/paper(210,297)->(132,-134). Affine least-squares residual about 2.61 mm RMS.",
-    "wrist": "User: zero initial roll, clockwise positive, counter-clockwise negative. Software roll range limits were removed by user decision on 2026-07-30.",
+    "wrist": "User corrected the observed Q1 wrist direction on 2026-07-31: positive planned rotation is counter-clockwise and negative is clockwise. The mapping sign is inverted so the NexArm command follows that observed convention.",
     "heights": "User set pick_height/release_height to -15 on 2026-07-31 from physical measurement. This does not by itself verify magnetic pickup or final placement accuracy.",
-    "transfer": "Fixed BUFFER [175,0,80,-90,0,0,3000]: first piece HOME -> pick -> BUFFER -> release; later pieces release -> BUFFER -> pick -> BUFFER -> release; after the final release the arm returns directly to HOME.",
-    "magnet": "STM32 USART1 application uses 115200 8N1 commands and a 50..500 ms timed MAGNET_ON lease. The by-id path ending 5B7A030191 is user-provided deployment data and must be rechecked on Jetson. Production sequence is pick-duration-elapsed -> MAGNET_ON/status-confirm -> release-duration-elapsed -> MAGNET_OFF/status-confirm. physical_pick_verified remains false until post-move visual evidence.",
-    "motion": "The first controller write after opening is the direct HOME set_pose command; Q1 does not send CMD_SET_GLOBAL_ACC. HOME and BUFFER use 3000 ms, while pick and release use 6000 ms. The sequence advances after each configured duration because current NexArm coordinate/servo feedback is stale during confirmed physical motion.",
+    "transfer": "Fixed BUFFER XYZ/Pitch/Claw [175,0,80,-90,*,0,3000]: before each pick BUFFER uses that piece's pick roll; after pickup BUFFER uses that piece's release roll, so wrist rotation completes during the lift/transfer before descending to release. After the final release the arm returns directly to HOME.",
+    "magnet": "STM32 USART1 application uses 115200 8N1 commands and a 50..500 ms timed MAGNET_ON lease. The by-id path ending 5B7A030191 is user-provided deployment data and must be rechecked on Jetson. Production sequence is pick-duration-plus-settle -> MAGNET_ON/status-confirm -> release-duration-plus-settle -> MAGNET_OFF/status-confirm. physical_pick_verified remains false until post-move visual evidence.",
+    "motion": "The first controller write after opening is the direct HOME set_pose command; Q1 does not send CMD_SET_GLOBAL_ACC. Current Cartesian and joint feedback have both failed to provide a usable production arrival signal on this arm. The sequence therefore uses each controller duration followed by a fixed 1.0 second mechanical settle before continuing. HOME and BUFFER use 3000 ms plus settle; pick and release use 6000 ms plus settle. No feedback wait or movement timeout can block camera initialization or the move queue. K230 initialization performs protocol handshakes without a discarded warmup capture; the next and only capture is the image used for scene analysis and planning.",
     "target_geometry": "The official Figure 2 template remains 100x60 mm. Run 20260731_012300_357937 measured the four fixed source polygons at 6375.18 mm2 versus the nominal 6000 mm2, giving a 1.0308 linear ratio. Q1 uses target_scale=1.03 for this physical four-piece set. The scaled 103x61.8 mm target is centered in the A4 lower/right half with origin [53.5,191.85] mm."
   },
-  "_note": "Single active source for NexArm, camera and STM32 magnet endpoints, arm calibration, HOME, motion and planning parameters. Production Q1 is STM32-only; real energization still requires --confirm RUN_Q1. The main sequence uses configured pose durations instead of stale NexArm arrival feedback."
+  "_note": "Single active source for NexArm, camera and STM32 magnet endpoints, arm calibration, HOME, motion and planning parameters. Production Q1 is STM32-only; real energization still requires --confirm RUN_Q1. The main sequence uses controller duration plus a fixed mechanical settle before switching the magnet."
 }

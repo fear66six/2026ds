@@ -3,7 +3,7 @@
     "value": [175.0, 0.0, 210.0, -90.0, 0.0, 0.0, 3000],
     "source": "User selected project HOME [175,0,210,-90,0,0] for the complete-paper view and requested a faster reset on 2026-07-31; HOME has an independent 3000 ms duration",
     "implementation": "q1/executors/nexarm.py::move_to_observe_pose (direct single move)",
-    "behavior": "正式 run 先打开 NexArm 串口并立即以第一条协议写入发送一次 HOME；HOME 完成后才查询状态、初始化 K230/STM32、拍一张正式图并执行规划队列。P1-P4 仍使用独立的 move_duration_ms=6000",
+    "behavior": "正式 run 打开 NexArm 串口后立即把 HOME 作为第一条协议命令发送，等待 HOME 的 3000 ms 控制器时长和 1.0 s 机械稳定时间后初始化 K230/STM32，只拍一张用于识别和规划的正式图，再执行 P1-P4 队列。BUFFER 同样为 3000 ms+1.0 s，PICK/RELEASE 为 6000 ms+1.0 s；当前实机反馈不参与生产流程推进",
     "historical_tasksuite": {
       "value": [200.0, 0.0, 160.0, -90.0, 0.0, -60.0, 1500],
       "source": "TaskSuite_E/board_roi_config.h + system_task_handle.cpp::move_observe",
@@ -14,7 +14,7 @@
   "nexarm_uart": {
     "source": "docs/NexArm机械臂/1.教程资料/6. 外部主控二次开发/02 程序源码/UART_Control/nexarm_sdk.py",
     "class": "NexArmClient",
-    "calls": ["open", "set_pose", "get_current_coords", "close"],
+    "calls": ["open", "set_pose", "close"],
     "baudrate": 1000000,
     "confidence": "A",
     "note": "示例中的/dev/ttyUSB0不作为固定设备节点；SDK未暴露急停或set_torque函数"

@@ -304,15 +304,9 @@ class K230TtlSnapshotCamera:
         if sid2 != self._session_id:
             self._session_id = sid2
             self._last_frame_id = None
-        # warmup capture discarded
-        frame, meta = self._capture_once(retry_count=0)
-        del frame
         self._event(
             "initialize_ok",
             session_id=self._session_id,
-            warmup_frame_id=meta.frame_id,
-            jpeg_bytes=meta.jpeg_bytes,
-            total_ms=meta.total_ms,
         )
         self._ready = True
 

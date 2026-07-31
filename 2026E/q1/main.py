@@ -102,7 +102,6 @@ def _apply_robot_fields(config: Q1RuntimeConfig, data: dict) -> None:
         "magnet_lease_ms",
         "position_tolerance_mm",
         "orientation_tolerance_deg",
-        "motion_timeout_s",
         "vertex_max_error_mm",
         "target_scale",
     )

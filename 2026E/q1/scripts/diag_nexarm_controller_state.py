@@ -157,15 +157,29 @@ def add_decoded(name: str, item: dict[str, Any]) -> None:
     if not item.get("ok"):
         return
     payload_hex = item["payload_hex"]
-    if name in {"current_coords", "ik_home"}:
+    if name == "current_coords":
         vals = decode_i16_list(payload_hex)
         if len(vals) >= 6:
             item["decoded"] = {
                 "pose": {
-                    "x": vals[1],
-                    "y": vals[2],
-                    "z": vals[3],
-                    "pitch": vals[0] / 10.0,
+                    "x": vals[0],
+                    "y": vals[1],
+                    "z": vals[2],
+                    "pitch": vals[3] / 10.0,
+                    "roll": vals[4],
+                    "claw": vals[5],
+                },
+                "servos": vals[6:12],
+            }
+    elif name == "ik_home":
+        vals = decode_i16_list(payload_hex)
+        if len(vals) >= 6:
+            item["decoded"] = {
+                "pose": {
+                    "x": vals[0],
+                    "y": vals[1],
+                    "z": vals[2],
+                    "pitch": vals[3] / 10.0,
                     "roll": vals[4],
                     "claw": vals[5],
                 },
@@ -222,6 +236,56 @@ def add_decoded(name: str, item: dict[str, Any]) -> None:
                 "frames": data[3] | (data[4] << 8),
                 "overflow": data[5],
             }
+
+
+def sample_real_joints(client, count: int = 20, interval_s: float = 0.1) -> dict[str, Any]:
+    started = time.monotonic()
+    samples: list[dict[str, Any]] = []
+    pulse_rows: list[list[int]] = []
+    for index in range(count):
+        item = request_payload(client, Cmd.GET_REAL_JOINT_ANGLES, timeout=1.0)
+        add_decoded("real_joint_angles", item)
+        decoded = item.get("decoded")
+        if decoded:
+            pulses = [int(axis["pulse"]) for axis in decoded]
+            pulse_rows.append(pulses)
+            samples.append(
+                {
+                    "sample": index,
+                    "elapsed_ms": round((time.monotonic() - started) * 1000.0, 1),
+                    "pulses": pulses,
+                    "angles_deg": [axis["angle_deg"] for axis in decoded],
+                }
+            )
+        else:
+            samples.append(
+                {
+                    "sample": index,
+                    "elapsed_ms": round((time.monotonic() - started) * 1000.0, 1),
+                    "error": item.get("error", "decode failed"),
+                }
+            )
+        deadline = started + (index + 1) * interval_s
+        time.sleep(max(0.0, deadline - time.monotonic()))
+
+    summary = []
+    for axis in range(6):
+        values = [row[axis] for row in pulse_rows]
+        summary.append(
+            {
+                "axis": axis + 1,
+                "min_pulse": min(values) if values else None,
+                "max_pulse": max(values) if values else None,
+                "span_pulse": max(values) - min(values) if values else None,
+            }
+        )
+    return {
+        "requested_samples": count,
+        "successful_samples": len(pulse_rows),
+        "interval_ms": int(round(interval_s * 1000.0)),
+        "axis_summary": summary,
+        "samples": samples,
+    }
 
 
 def read_servo_reg(client, servo_id: int, reg: int, length: int, timeout: float = 0.3) -> dict[str, Any]:
@@ -342,6 +406,7 @@ def run_readonly(client, home_pose: list[float]) -> dict[str, Any]:
         raw_requests[name] = item
         time.sleep(0.03)
     checks["controller_queries"] = raw_requests
+    checks["stationary_joint_samples"] = sample_real_joints(client)
     checks["direct_servo_register_reads"] = read_servo_matrix(client)
     return checks
 

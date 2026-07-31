@@ -47,7 +47,6 @@ class Q1RuntimeConfig:
     position_tolerance_mm: float = 10.0
     orientation_tolerance_deg: float = 3.0
     idle_stable_samples: int = 3
-    motion_timeout_s: float = 12.0
     physical_pick_enabled: bool = True
     physical_pick_verified: bool = False
     motion_calibration_status: str = (
@@ -118,7 +117,6 @@ class Q1RuntimeConfig:
             "position_tolerance_mm": self.position_tolerance_mm,
             "orientation_tolerance_deg": self.orientation_tolerance_deg,
             "idle_stable_samples": self.idle_stable_samples,
-            "motion_timeout_s": self.motion_timeout_s,
             "vertex_max_error_mm": self.vertex_max_error_mm,
         }
         for name, value in required.items():
