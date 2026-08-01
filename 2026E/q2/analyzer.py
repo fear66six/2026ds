@@ -34,6 +34,7 @@ class WhitePuzzleAnalyzer:
     def __init__(self, *, pixels_per_mm: float = RECTIFIED_PIXELS_PER_MM) -> None:
         self.pixels_per_mm = float(pixels_per_mm)
         self.last_paper = None
+        self.last_rectified = None
         self.last_puzzle = None
         self.last_solution = None
 
@@ -64,6 +65,7 @@ class WhitePuzzleAnalyzer:
                 int(round(297.0 * self.pixels_per_mm)),
             ),
         )
+        self.last_rectified = rectified
         rectified_at = time.perf_counter()
 
         try:

@@ -514,9 +514,9 @@ def detect_pieces(
     mask = _segment_piece_mask(frame, paper, hsv_ranges)
     maximum_area_px = MAX_DETECTED_AREA_CM2 * paper.px_per_cm**2
     mask = _split_large_blobs(mask, maximum_area_px * 1.15)
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=1)
-    mask = cv2.dilate(mask, kernel, iterations=1)
+    mask = cv2.dilate(mask, kernel, iterations=2)
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
     pieces: list[DetectedPiece] = []
     for contour in contours:
@@ -739,6 +739,54 @@ def _adaptive_polygon_candidate(
     return min(candidates, key=lambda item: item[:4])[4]
 
 
+def _expand_polygon_to_contour_cm(
+    vertices_cm: np.ndarray,
+    contour_cm: np.ndarray,
+    *,
+    coverage: float = 0.95,
+    max_expand_cm: float = 0.35,
+) -> np.ndarray:
+    """Push a simplified polygon outward when contour points sit outside it."""
+
+    points = np.asarray(contour_cm, dtype=np.float64).reshape(-1, 2)
+    polygon = np.asarray(vertices_cm, dtype=np.float64).reshape(-1, 2).copy()
+    if len(points) < 3 or len(polygon) < 3:
+        return vertices_cm
+
+    def covered(poly: np.ndarray) -> float:
+        inside = sum(
+            cv2.pointPolygonTest(poly.astype(np.float32), (float(x), float(y)), False) >= 0
+            for x, y in points
+        )
+        return inside / len(points)
+
+    if covered(polygon) >= coverage:
+        return vertices_cm
+
+    centroid = polygon.mean(axis=0)
+    distances = [
+        float(cv2.pointPolygonTest(polygon.astype(np.float32), (float(x), float(y)), True))
+        for x, y in points
+    ]
+    outside = [distance for distance in distances if distance > 0.02]
+    if not outside:
+        return vertices_cm
+
+    offset_cm = min(max(outside), max_expand_cm)
+    expanded = []
+    for vertex in polygon:
+        direction = vertex - centroid
+        length = float(np.linalg.norm(direction))
+        if length <= 1e-9:
+            expanded.append(vertex)
+            continue
+        expanded.append(vertex + direction / length * offset_cm)
+    expanded_arr = np.asarray(expanded, dtype=np.float64)
+    if covered(expanded_arr) >= covered(polygon):
+        return expanded_arr
+    return vertices_cm
+
+
 def _refine_vertices_from_contour_cm(
     piece: DetectedPiece,
     paper: PaperFrame,
@@ -758,8 +806,8 @@ def _refine_vertices_from_contour_cm(
         expected_sides=expected_sides,
     )
     if refined.valid:
-        return refined.refined_vertices_mm / 10.0
-    return vertices_cm
+        vertices_cm = refined.refined_vertices_mm / 10.0
+    return _expand_polygon_to_contour_cm(vertices_cm, contour_to_cm(piece.contour, paper))
 
 
 def detect_polygon_vertices(piece: DetectedPiece, paper: PaperFrame) -> np.ndarray:
