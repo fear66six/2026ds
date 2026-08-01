@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import time
-from dataclasses import replace
 
 import numpy as np
 
@@ -15,7 +14,6 @@ from .card_solver.image_input import card_puzzle_from_rectified
 from .card_solver.models import Solution
 from .models import CardPieceState, CardScene
 
-PRODUCTION_SOLVE_TIMEOUT_S = 25.0
 _LAYOUT_FALLBACKS = {
     "auto": ("auto", "top-bottom", "left-right"),
     "top-bottom": ("top-bottom", "left-right"),
@@ -30,16 +28,10 @@ class CardSceneAnalyzer:
         layout: str = "top-bottom",
         solver_config: SolverConfig | None = None,
         pattern_config: PatternConfig | None = None,
-        solve_timeout_s: float = PRODUCTION_SOLVE_TIMEOUT_S,
     ) -> None:
         self.layout = layout
-        active_solver_config = solver_config or production_solver_config()
-        self.solver_config = replace(
-            active_solver_config,
-            max_search_seconds=float(solve_timeout_s),
-        )
+        self.solver_config = solver_config or production_solver_config()
         self.pattern_config = pattern_config or PatternConfig()
-        self.solve_timeout_s = float(solve_timeout_s)
         self.last_paper = None
         self.last_puzzle = None
         self.last_solution = None
@@ -110,13 +102,13 @@ class CardSceneAnalyzer:
                     image_path=snapshot.path,
                 )
                 solution, _solver = self._solve_observations(puzzle.observations)
-                if solution.success and not solution.best_effort:
+                if solution.success:
                     if layout != self.layout:
                         layout_warnings.append(
                             f"CARD_LAYOUT_FALLBACK: requested={self.layout}, used={layout}"
                         )
                     break
-                if solution.best_effort or _solver.stats.budget_exhausted:
+                if _solver.stats.budget_exhausted:
                     break
         except ValueError as exc:
             return CardScene(
@@ -162,11 +154,11 @@ class CardSceneAnalyzer:
             )
 
         warnings = list(layout_warnings)
-        executable_solution = bool(solution.success and not solution.best_effort)
+        executable_solution = bool(solution.success)
         if solution.best_effort:
             warnings.append(
                 solution.validation_warning
-                or "CARD_SOLVE_BEST_EFFORT_REJECTED_FOR_EXECUTION"
+                or "CARD_SOLVE_HIGHEST_CONFIDENCE_FALLBACK_SELECTED"
             )
         if not executable_solution:
             warnings.append(solution.reason or "CARD_SOLVE_FAILED")

@@ -163,6 +163,7 @@ class Q3Controller:
                 )
                 self.robot.move_to_observe_pose()
 
+            self.robot.notify_completion()
             self._transition(Q1State.COMPLETED, len(self.move_queue))
             self.recorder.write(
                 "final.json",

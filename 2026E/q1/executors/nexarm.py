@@ -67,6 +67,16 @@ class NexArmRobotExecutor:
             )
         )
 
+    def notify_completion(self) -> None:
+        if self.client is None:
+            raise RuntimeError("NexArm is not initialized")
+        self.client.set_buzzer(
+            on_ms=100,
+            off_ms=100,
+            times=2,
+            frequency=2000,
+        )
+
     def _move(self, pose: RobotPose) -> None:
         if self.client is None:
             raise RuntimeError("NexArm is not initialized")

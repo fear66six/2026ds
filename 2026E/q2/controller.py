@@ -163,6 +163,7 @@ class Q2Controller:
                 )
                 self.robot.move_to_observe_pose()
 
+            self.robot.notify_completion()
             self._transition(Q1State.COMPLETED, len(self.move_queue))
             self.recorder.write(
                 "final.json",
@@ -223,4 +224,3 @@ class Q2Controller:
                     {"failures": shutdown_failures},
                 )
             self.recorder.announce(prefix="Q2_LAST_RUN")
-

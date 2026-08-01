@@ -13,9 +13,8 @@ class SolverConfig:
     """Geometry, image and search tolerances."""
 
     max_piece_count: int = 4
-    # A colour-based distractor hypothesis is evaluated only after solving
-    # with every detected fragment has failed.  It never pre-emptively removes
-    # valid multicolour face-card fragments.
+    # A strongly supported colour hypothesis may remove an opposite-suit
+    # distractor first; the complete fragment set remains the fallback.
     allow_distractor_pieces: bool = True
     min_vertices: int = 3
     max_vertices: int = 5
@@ -142,12 +141,12 @@ class SolverConfig:
 
 
 def production_solver_config() -> SolverConfig:
-    """Return bounded defaults for the Jetson capture/plan/run path."""
+    """Return bounded defaults for the at-most-four-piece production path."""
 
     return SolverConfig(
         find_best_solution=False,
         max_search_nodes=None,
-        max_search_seconds=25.0,
+        max_search_seconds=60.0,
         return_best_effort_on_timeout=True,
         enable_expanded_length_search=True,
     )

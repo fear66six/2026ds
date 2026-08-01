@@ -99,6 +99,9 @@ class SimulationRobotExecutor:
         self.observe_count += 1
         self.phase_log.append("MOVE_TO_OBSERVE")
 
+    def notify_completion(self) -> None:
+        self.phase_log.append("COMPLETION_BUZZER")
+
     def wait_until_idle(self, timeout_s: float) -> bool:
         del timeout_s
         self.phase_log.append("WAIT_ARM_STABLE")

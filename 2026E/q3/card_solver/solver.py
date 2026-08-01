@@ -315,9 +315,8 @@ class CardPuzzleSolver:
             self.stats.elapsed_seconds = time.perf_counter() - self._search_started_at
             return result
         # Two agreeing corner indices can propose an opposite-suit distractor
-        # set.  Try that high-confidence hypothesis first for speed, but retain
-        # the all-fragment hypothesis as a fallback so colour is never the only
-        # authority for rejecting a multicolour face-card fragment.
+        # set. Try that high-confidence hypothesis first, then retain the
+        # complete fragment set as the fallback.
         hypotheses: list[
             tuple[list[PieceObservation | Piece], tuple[int, ...]]
         ] = []
@@ -406,10 +405,7 @@ class CardPuzzleSolver:
                 self._dfs(initial, len(pieces))
         if self._best_state is None or self._best_validation is None:
             if (
-                self.stats.budget_exhausted
-                and self.stats.budget_reason is not None
-                and self.stats.budget_reason.startswith("time limit")
-                and self.config.return_best_effort_on_timeout
+                self.config.return_best_effort_on_timeout
                 and self._best_effort_state is not None
                 and self._best_effort_rectangle is not None
                 and self._best_effort_dimensions is not None
@@ -456,32 +452,29 @@ class CardPuzzleSolver:
         if self.stats.budget_exhausted:
             return True
         elapsed = time.perf_counter() - self._search_started_at
-        checks = (
-            (
-                self.config.max_search_seconds is not None
-                and elapsed >= self.config.max_search_seconds,
-                f"time limit {self.config.max_search_seconds:g}s",
-            ),
-            (
-                entering_node
-                and self.config.max_search_nodes is not None
-                and self.stats.dfs_calls >= self.config.max_search_nodes,
-                f"node limit {self.config.max_search_nodes}",
-            ),
-            (
-                entering_candidate
-                and self.config.max_candidate_attempts is not None
-                and self.stats.candidate_attempts
-                >= self.config.max_candidate_attempts,
-                f"candidate limit {self.config.max_candidate_attempts}",
-            ),
-        )
-        for exceeded, reason in checks:
-            if exceeded:
-                self.stats.budget_exhausted = True
-                self.stats.budget_reason = reason
-                self._log(f"[SEARCH] budget exhausted: {reason}")
-                return True
+        reason = None
+        if (
+            self.config.max_search_seconds is not None
+            and elapsed >= self.config.max_search_seconds
+        ):
+            reason = f"time limit {self.config.max_search_seconds:g}s"
+        elif (
+            entering_node
+            and self.config.max_search_nodes is not None
+            and self.stats.dfs_calls >= self.config.max_search_nodes
+        ):
+            reason = f"node limit {self.config.max_search_nodes}"
+        elif (
+            entering_candidate
+            and self.config.max_candidate_attempts is not None
+            and self.stats.candidate_attempts >= self.config.max_candidate_attempts
+        ):
+            reason = f"candidate limit {self.config.max_candidate_attempts}"
+        if reason is not None:
+            self.stats.budget_exhausted = True
+            self.stats.budget_reason = reason
+            self._log(f"[SEARCH] budget exhausted: {reason}")
+            return True
         return False
 
     @staticmethod
@@ -592,7 +585,7 @@ class CardPuzzleSolver:
         self,
         ignored_piece_ids: tuple[int, ...],
     ) -> Solution:
-        """Build a clearly marked, visualization-only timeout result."""
+        """Build the highest-ranked complete fallback assembly."""
 
         assert self._best_effort_state is not None
         assert self._best_effort_validation is not None
@@ -600,10 +593,14 @@ class CardPuzzleSolver:
         assert self._best_effort_dimensions is not None
         validation = self._best_effort_validation
         short_side, long_side = self._best_effort_dimensions
+        search_outcome = (
+            f"Search budget exhausted: {self.stats.budget_reason}"
+            if self.stats.budget_exhausted
+            else "No strict assembly passed final validation"
+        )
         warning = (
-            f"Search budget exhausted: {self.stats.budget_reason}; BEST EFFORT "
-            "only, not safe for mechanical execution; final validation failed: "
-            f"{validation.reason}"
+            f"{search_outcome}; selected highest-ranked complete assembly; "
+            f"strict validation failed: {validation.reason}"
         )
         return Solution(
             success=True,

@@ -83,6 +83,9 @@ class _Robot:
     def move_to_observe_pose(self) -> None:
         self.events.append("robot.observe")
 
+    def notify_completion(self) -> None:
+        self.events.append("robot.notify_completion")
+
     def execute_single_move(self, move: _Move, magnet) -> ExecutionResult:
         del magnet
         self.events.append(f"robot.execute:{move.template_id}")
@@ -167,8 +170,9 @@ def test_controller_captures_and_analyzes_once_then_executes_queue(
         "camera.capture:0",
         "analyzer.analyze:0",
     ]
-    assert events[-5:] == [
+    assert events[-6:] == [
         "robot.observe",
+        "robot.notify_completion",
         "magnet.emergency_off",
         "robot.close",
         "camera.close",
