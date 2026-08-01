@@ -1,6 +1,6 @@
 """Standalone Q3 playing-card fragment solver."""
 
-from .config import PatternConfig, SolverConfig
+from .config import PatternConfig, SolverConfig, production_solver_config
 from .geometry import Point, RigidTransform
 from .image_input import card_puzzle_from_rectified, load_card_puzzle
 from .models import CardPuzzleInput, Piece, PieceObservation, Solution
@@ -18,6 +18,7 @@ __all__ = [
     "SearchStats",
     "Solution",
     "SolverConfig",
+    "production_solver_config",
     "calculate_pose",
     "load_card_puzzle",
 ]

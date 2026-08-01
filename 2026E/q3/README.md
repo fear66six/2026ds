@@ -4,10 +4,16 @@ Q3 reuses the completed Q1 K230 capture, A4 detection, paper-to-arm calibration,
 NexArm transfer sequence and STM32 magnet session. Only card-fragment detection,
 pattern matching and assembly solving differ.
 
-The card solver was integrated from `2026E-7.31/q3/card_solver`. Production Q3
+The card solver was initially integrated from `2026E-7.31/q3/card_solver` and
+updated from `D:/OIK/Downloads/q3/card_solver`. Production Q3
 first uses Q1 paper detection and rectifies the board to portrait A4 coordinates,
 then solves the white playing-card fragments and centres the assembled card in
 the lower half.
+
+The updated solver scores four-piece combinations when segmentation produces
+extra contours, restores playing-card corner marks more robustly, and bounds
+search by wall-clock time. A timeout may retain a clearly marked best-effort
+assembly for diagnostics, but Q3 rejects that assembly for motion planning.
 
 ## Dependencies
 

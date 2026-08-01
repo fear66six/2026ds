@@ -363,9 +363,51 @@ def check_corner_marker_layout(
     if len(corners) != 4:
         return 0.0, 0.0, None
 
-    assignments = ((0, 2), (2, 0), (1, 3), (3, 1))
     rectangle_centre = Point(
         float(rectangle.centroid.x), float(rectangle.centroid.y)
+    )
+
+    # Use the same canonical orientation as board visualization: rotate the
+    # rectangle so its long side points down.  In that portrait frame a real
+    # card index pair must occupy top-left and bottom-right.  A 180-degree
+    # ambiguity flips both axes and therefore preserves this diagonal, while
+    # a horizontal mirror moves the indices to top-right/bottom-left.
+    rectangle_edges = [
+        (
+            math.dist(corners[index].as_tuple(), corners[(index + 1) % 4].as_tuple()),
+            corners[index],
+            corners[(index + 1) % 4],
+        )
+        for index in range(4)
+    ]
+    _, long_start, long_end = max(rectangle_edges, key=lambda item: item[0])
+    long_angle = math.atan2(
+        long_end.y - long_start.y,
+        long_end.x - long_start.x,
+    )
+    canonical_rotation = math.pi / 2.0 - long_angle
+    cosine = math.cos(canonical_rotation)
+    sine = math.sin(canonical_rotation)
+
+    def canonical_offset(point: Point) -> tuple[float, float]:
+        offset_x = point.x - rectangle_centre.x
+        offset_y = point.y - rectangle_centre.y
+        return (
+            cosine * offset_x - sine * offset_y,
+            sine * offset_x + cosine * offset_y,
+        )
+
+    canonical_corner_indices = [
+        index
+        for index, corner in enumerate(corners)
+        if canonical_offset(corner)[0] * canonical_offset(corner)[1] > 0.0
+    ]
+    if len(canonical_corner_indices) != 2:
+        return 0.0, 0.0, None
+    first_canonical, second_canonical = canonical_corner_indices
+    assignments = (
+        (first_canonical, second_canonical),
+        (second_canonical, first_canonical),
     )
 
     pair_candidates = []
@@ -424,13 +466,37 @@ def check_corner_marker_layout(
         first,
         second,
         chirality_values,
-    ) = min(pair_candidates, key=lambda item: item[:4])
+    ) = min(
+        pair_candidates,
+        # Physical proximity to the canonical card corners identifies which
+        # local groups are actual indices.  Chirality is evaluated only after
+        # that choice; otherwise a distant face-art group with a convenient
+        # direction sign can outrank the real rank/suit pair.
+        key=lambda item: (item[1], item[2], item[0], item[3]),
+    )
     tolerance = max(config.corner_layout_tolerance_mm, 1e-9)
     layout_score = maximum_distance / tolerance
     confidence = min(
         1.0,
         min(first[0], second[0]) / max(float(config.corner_min_components), 1.0),
     )
+    # Two nearby groups on one fragment can be details from a face-card
+    # illustration rather than the card's two distant rank/suit indices.  A
+    # rigid transform cannot move such a pair onto opposite canonical corners.
+    # Treat that impossible, single-source evidence as neutral; real indices
+    # found on different pieces remain a hard global constraint.
+    marker_separation = math.dist(first[2].as_tuple(), second[2].as_tuple())
+    rectangle_diagonal = max(
+        math.dist(first_corner.as_tuple(), second_corner.as_tuple())
+        for first_corner, second_corner in itertools.combinations(corners, 2)
+    )
+    if (
+        maximum_distance > config.corner_layout_tolerance_mm
+        and len({marker[1] for marker in markers}) == 1
+        and marker_separation
+        < config.corner_same_piece_min_diagonal_ratio * rectangle_diagonal
+    ):
+        return 0.0, 0.0, None
     if mirrored:
         return (
             float(layout_score),
@@ -442,7 +508,8 @@ def check_corner_marker_layout(
         return (
             float(layout_score),
             float(confidence),
-            "card corner indices are not on opposite rectangle corners "
+            "card corner indices are not on the canonical "
+            "top-left/bottom-right corners "
             f"(pieces {first[1]} and {second[1]}, "
             f"distance={maximum_distance:.2f} mm)",
         )
@@ -661,7 +728,13 @@ def check_final_assembly(
         matcher,
         config,
         pattern_config,
-        enforce_rejection=not strict_strip_pattern,
+        # A uniform grid is globally ambiguous, so all four contacts must be
+        # judged together.  Dense face-card artwork can make one correct seam
+        # slightly exceed the local threshold even while the other three
+        # seams, the corner indices and whole-card symmetry agree.  Irregular
+        # cuts retain the established per-seam veto because geometry already
+        # determines their topology.
+        enforce_rejection=not strict_global_pattern,
     )
     if pattern_error is not None:
         return FinalValidation(False, pattern_error, seams=seams)
@@ -680,6 +753,32 @@ def check_final_assembly(
     else:
         pattern_score = 0.0
     pattern_confidence = informative_weight / max(total_length, 1e-9)
+    if strict_global_pattern and not strict_strip_pattern:
+        aggregate_seam = SeamScore(
+            -1,
+            -1,
+            -1,
+            -1,
+            Point(0.0, 0.0),
+            Point(max(total_length, 1.0), 0.0),
+            float(pattern_score),
+            float(min(1.0, pattern_confidence)),
+        )
+        if matcher.rejects(aggregate_seam, final=True):
+            return FinalValidation(
+                False,
+                "aggregate 2x2 pattern mismatch: "
+                f"error={pattern_score:.3f}, "
+                f"confidence={pattern_confidence:.3f}",
+                rectangle=rectangle,
+                long_side_mm=long_side,
+                short_side_mm=short_side,
+                geometry_score=gap_ratio,
+                pattern_score=float(pattern_score),
+                pattern_confidence=float(min(1.0, pattern_confidence)),
+                strict_global_pattern=True,
+                seams=seams,
+            )
     corner_layout_score, corner_layout_confidence, corner_error = (
         check_corner_marker_layout(
             pieces,

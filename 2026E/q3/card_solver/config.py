@@ -53,7 +53,14 @@ class SolverConfig:
     partial_min_residual_mm: float = 18.0
     min_connection_length_mm: float = 6.0
     find_best_solution: bool = True
-    max_search_nodes: int = 50_000
+    # Image search is bounded by wall-clock time rather than an arbitrary
+    # traversal count.  Optional count limits remain available for tests and
+    # diagnostics, but production defaults do not discard a solvable branch
+    # merely because it was reached after a fixed number of candidates.
+    max_search_nodes: int | None = None
+    max_candidate_attempts: int | None = None
+    max_search_seconds: float | None = 60.0
+    return_best_effort_on_timeout: bool = True
     best_solution_stop_gap_ratio: float = 0.06
     best_solution_stop_pattern_error: float = 0.40
     best_solution_stop_pattern_confidence: float = 0.10
@@ -91,6 +98,7 @@ class SolverConfig:
     artwork_background_noise_multiplier: float = 1.5
     artwork_support_distance_mm: float = 1.0
     divider_exclusion_mm: float = 3.0
+    max_visual_combination_candidates: int = 12
 
     merge_collinear_open_edges: bool = True
     open_edge_merge_angle_tolerance_deg: float = 3.0
@@ -115,12 +123,34 @@ class SolverConfig:
             raise ValueError("artwork background percentile must be between zero and 100")
         if not 0.0 <= self.max_final_gap_ratio <= 1.0:
             raise ValueError("max_final_gap_ratio must be between zero and one")
+        for name in ("max_search_nodes", "max_candidate_attempts"):
+            value = getattr(self, name)
+            if value is not None and value < 1:
+                raise ValueError(f"{name} must be positive when configured")
+        if self.max_search_seconds is not None and self.max_search_seconds <= 0.0:
+            raise ValueError("max_search_seconds must be positive when configured")
+        if self.max_visual_combination_candidates < self.max_piece_count:
+            raise ValueError(
+                "max_visual_combination_candidates is below max_piece_count"
+            )
         for name, value in vars(self).items():
             if isinstance(value, (int, float)) and name not in {
                 "signature_position_precision",
                 "signature_rotation_precision",
             } and value < 0:
                 raise ValueError(f"{name} must be non-negative")
+
+
+def production_solver_config() -> SolverConfig:
+    """Return bounded defaults for the Jetson capture/plan/run path."""
+
+    return SolverConfig(
+        find_best_solution=False,
+        max_search_nodes=None,
+        max_search_seconds=25.0,
+        return_best_effort_on_timeout=True,
+        enable_expanded_length_search=True,
+    )
 
 
 @dataclass(frozen=True)
@@ -161,12 +191,19 @@ class PatternConfig:
     corner_boundary_exclusion_mm: float = 0.8
     corner_min_component_area_mm2: float = 2.0
     corner_max_component_area_mm2: float = 75.0
+    # Recovery from an oversized face-art component graph is intentionally
+    # stricter than ordinary marker extraction.  Both the rank and suit of a
+    # real corner index remain substantial components; tiny illustration
+    # details must not be combined into synthetic Joker indices.
+    corner_recovered_min_component_area_mm2: float = 20.0
     corner_min_local_area_mm2: float = 0.35
     corner_min_components: int = 2
     corner_max_components: int = 3
     corner_layout_tolerance_mm: float = 34.0
     corner_direction_min_separation_mm: float = 2.0
     corner_chirality_min_abs: float = 0.05
+    corner_direction_area_flip_ratio: float = 1.15
+    corner_same_piece_min_diagonal_ratio: float = 0.60
 
     symmetry_pixels_per_mm: float = 1.5
     symmetry_corner_exclusion_mm: float = 0.0
@@ -191,3 +228,13 @@ class PatternConfig:
             raise ValueError("corner_max_components is below corner_min_components")
         if self.corner_min_component_area_mm2 > self.corner_max_component_area_mm2:
             raise ValueError("invalid corner component area limits")
+        if not (
+            self.corner_min_component_area_mm2
+            <= self.corner_recovered_min_component_area_mm2
+            <= self.corner_max_component_area_mm2
+        ):
+            raise ValueError("invalid recovered corner component area limit")
+        if self.corner_direction_area_flip_ratio < 1.0:
+            raise ValueError("corner direction area flip ratio must be at least one")
+        if not 0.0 <= self.corner_same_piece_min_diagonal_ratio <= 1.0:
+            raise ValueError("corner same-piece diagonal ratio is outside zero to one")

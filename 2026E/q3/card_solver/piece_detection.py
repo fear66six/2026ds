@@ -246,9 +246,13 @@ def _polygon_from_contour(
         return None
     error, polygon = min(candidates, key=lambda item: item[0])
     allowed_error = config.polygon_area_error_ratio
-    if len(polygon) == 4 and cv2.isContourConvex(
-        polygon.astype(np.float32).reshape(-1, 1, 2)
-    ):
+    polygon_cv = polygon.astype(np.float32).reshape(-1, 1, 2)
+    if len(polygon) == 3:
+        # Red/black artwork often shortens the white-stock seed on triangular
+        # cuts, so the fitted triangle area error is naturally larger than for
+        # mostly white quadrilateral fragments.
+        allowed_error = config.quadrilateral_area_error_ratio
+    elif len(polygon) == 4 and cv2.isContourConvex(polygon_cv):
         # Dark face-card artwork can carve deep holes out of the white-stock
         # seed.  A stable convex quadrilateral still recovers the physical
         # paper boundary, but its area error is naturally larger than for a
@@ -690,10 +694,6 @@ def detect_fragments(
         )
 
     fragments.sort(key=lambda fragment: (centre(fragment)[1], centre(fragment)[0]))
-    if len(fragments) > active.max_piece_count:
-        raise ValueError(
-            f"detected {len(fragments)} fragments; maximum is {active.max_piece_count}"
-        )
     if not fragments:
         raise ValueError("no valid playing-card fragments were detected")
     return fragments

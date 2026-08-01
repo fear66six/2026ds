@@ -5,7 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 import itertools
 import math
+import time
 from typing import Iterable, Sequence
+
+from shapely.geometry import MultiPoint, Polygon, box
 
 from .config import PatternConfig, SolverConfig
 from .geometry import Point, RigidTransform, normalize_angle, polygon_angles_deg
@@ -52,6 +55,10 @@ class SearchStats:
     composite_edge_merges: int = 0
     expanded_searches: int = 0
     expanded_candidates: int = 0
+    budget_exhausted: bool = False
+    budget_reason: str | None = None
+    elapsed_seconds: float = 0.0
+    best_effort_updates: int = 0
 
 
 @dataclass(frozen=True)
@@ -284,18 +291,29 @@ class CardPuzzleSolver:
         self._optimal_found = False
         self._expanded_length_search = False
         self._stage_dfs_calls = 0
+        self._search_started_at = 0.0
+        self._best_effort_state: SolverState | None = None
+        self._best_effort_validation: FinalValidation | None = None
+        self._best_effort_score = math.inf
+        self._best_effort_rectangle: Polygon | None = None
+        self._best_effort_dimensions: tuple[float, float] | None = None
+        self._best_effort_geometry_score: float | None = None
 
     def solve(
         self,
         items: Sequence[PieceObservation | Piece]
         | Iterable[PieceObservation | Piece],
     ) -> Solution:
+        self.stats = SearchStats()
+        self._search_started_at = time.perf_counter()
         values = list(items)
         if len(values) > self.config.max_piece_count:
-            return Solution(
+            result = Solution(
                 False,
                 reason=f"At most {self.config.max_piece_count} pieces are supported",
             )
+            self.stats.elapsed_seconds = time.perf_counter() - self._search_started_at
+            return result
         # Two agreeing corner indices can propose an opposite-suit distractor
         # set.  Try that high-confidence hypothesis first for speed, but retain
         # the all-fragment hypothesis as a fallback so colour is never the only
@@ -312,8 +330,12 @@ class CardPuzzleSolver:
         for hypothesis_values, hypothesis_ignored_ids in hypotheses:
             result = self._solve_exact(hypothesis_values, hypothesis_ignored_ids)
             if result.success:
+                self.stats.elapsed_seconds = time.perf_counter() - self._search_started_at
                 return result
             last_failure = result
+            if self.stats.budget_exhausted:
+                break
+        self.stats.elapsed_seconds = time.perf_counter() - self._search_started_at
         return last_failure
 
     def _solve_exact(
@@ -330,10 +352,15 @@ class CardPuzzleSolver:
         error = self._validate_input(pieces, bool(observations))
         if error:
             return Solution(False, ignored_piece_ids=ignored_piece_ids, reason=error)
-        self.stats = SearchStats()
         self._visited.clear()
         self._best_state = None
         self._best_validation = None
+        self._best_effort_state = None
+        self._best_effort_validation = None
+        self._best_effort_score = math.inf
+        self._best_effort_rectangle = None
+        self._best_effort_dimensions = None
+        self._best_effort_geometry_score = None
         self._optimal_found = False
         self._expanded_length_search = False
         self._stage_dfs_calls = 0
@@ -365,6 +392,7 @@ class CardPuzzleSolver:
             if (
                 self._best_state is None
                 and self.config.enable_expanded_length_search
+                and not self.stats.budget_exhausted
             ):
                 # Preserve the established fast search for all normal inputs.
                 # Only an otherwise-unsolved puzzle pays for candidates in the
@@ -377,10 +405,25 @@ class CardPuzzleSolver:
                 self._log("[SEARCH] retry with expanded length candidates")
                 self._dfs(initial, len(pieces))
         if self._best_state is None or self._best_validation is None:
+            if (
+                self.stats.budget_exhausted
+                and self.stats.budget_reason is not None
+                and self.stats.budget_reason.startswith("time limit")
+                and self.config.return_best_effort_on_timeout
+                and self._best_effort_state is not None
+                and self._best_effort_rectangle is not None
+                and self._best_effort_dimensions is not None
+            ):
+                return self._build_best_effort_solution(ignored_piece_ids)
+            reason = (
+                f"Search budget exhausted: {self.stats.budget_reason}"
+                if self.stats.budget_exhausted
+                else "No valid geometry and pattern assembly found"
+            )
             return Solution(
                 False,
                 ignored_piece_ids=ignored_piece_ids,
-                reason="No valid geometry and pattern assembly found",
+                reason=reason,
             )
         validation = self._best_validation
         return Solution(
@@ -400,6 +443,190 @@ class CardPuzzleSolver:
             rectangle=validation.rectangle,
             seams=validation.seams,
             ignored_piece_ids=ignored_piece_ids,
+        )
+
+    def _budget_exceeded(
+        self,
+        *,
+        entering_node: bool = False,
+        entering_candidate: bool = False,
+    ) -> bool:
+        """Apply one wall-clock budget to every search strategy."""
+
+        if self.stats.budget_exhausted:
+            return True
+        elapsed = time.perf_counter() - self._search_started_at
+        checks = (
+            (
+                self.config.max_search_seconds is not None
+                and elapsed >= self.config.max_search_seconds,
+                f"time limit {self.config.max_search_seconds:g}s",
+            ),
+            (
+                entering_node
+                and self.config.max_search_nodes is not None
+                and self.stats.dfs_calls >= self.config.max_search_nodes,
+                f"node limit {self.config.max_search_nodes}",
+            ),
+            (
+                entering_candidate
+                and self.config.max_candidate_attempts is not None
+                and self.stats.candidate_attempts
+                >= self.config.max_candidate_attempts,
+                f"candidate limit {self.config.max_candidate_attempts}",
+            ),
+        )
+        for exceeded, reason in checks:
+            if exceeded:
+                self.stats.budget_exhausted = True
+                self.stats.budget_reason = reason
+                self._log(f"[SEARCH] budget exhausted: {reason}")
+                return True
+        return False
+
+    @staticmethod
+    def _rectangle_dimensions(rectangle: Polygon) -> tuple[float, float]:
+        coordinates = list(rectangle.exterior.coords)[:-1]
+        lengths = [
+            math.dist(coordinates[index], coordinates[(index + 1) % 4])
+            for index in range(4)
+        ]
+        return min(lengths), max(lengths)
+
+    def _consider_best_effort(
+        self,
+        state: SolverState,
+        validation: FinalValidation,
+        *,
+        axis_aligned: bool = False,
+    ) -> None:
+        """Retain the closest complete assembly for a possible timeout result."""
+
+        rectangle = validation.rectangle
+        rectangle_bounds: tuple[float, float, float, float] | None = None
+        if isinstance(rectangle, Polygon) and rectangle.area > 1e-9:
+            short_side, long_side = self._rectangle_dimensions(rectangle)
+            rectangle_area = float(rectangle.area)
+        elif axis_aligned:
+            rectangle_bounds = (
+                min(piece.polygon.bounds[0] for piece in state.placed_pieces),
+                min(piece.polygon.bounds[1] for piece in state.placed_pieces),
+                max(piece.polygon.bounds[2] for piece in state.placed_pieces),
+                max(piece.polygon.bounds[3] for piece in state.placed_pieces),
+            )
+            min_x, min_y, max_x, max_y = rectangle_bounds
+            first_side = max_x - min_x
+            second_side = max_y - min_y
+            short_side, long_side = sorted((first_side, second_side))
+            rectangle_area = first_side * second_side
+        else:
+            points = [
+                point.as_tuple()
+                for placed in state.placed_pieces
+                for point in placed.vertices
+            ]
+            candidate_rectangle = MultiPoint(points).minimum_rotated_rectangle
+            if (
+                not isinstance(candidate_rectangle, Polygon)
+                or candidate_rectangle.area <= 1e-9
+            ):
+                return
+            rectangle = candidate_rectangle
+            short_side, long_side = self._rectangle_dimensions(rectangle)
+            rectangle_area = float(rectangle.area)
+
+        minimum_long = (
+            self.config.image_min_long_side_mm
+            if self._observations
+            else self.config.min_long_side_mm
+        )
+        tolerance = self.config.rectangle_dimension_tolerance_mm
+
+        def range_error(value: float, minimum: float, maximum: float) -> float:
+            if value < minimum - tolerance:
+                return minimum - tolerance - value
+            if value > maximum + tolerance:
+                return value - maximum - tolerance
+            return 0.0
+
+        dimension_error = range_error(
+            short_side,
+            self.config.min_short_side_mm,
+            self.config.max_short_side_mm,
+        ) + range_error(
+            long_side,
+            minimum_long,
+            self.config.max_long_side_mm,
+        )
+        piece_area = sum(piece.polygon.area for piece in state.placed_pieces)
+        geometry_error = abs(rectangle_area - piece_area) / max(
+            rectangle_area,
+            1e-9,
+        )
+        pattern_error = validation.pattern_score * validation.pattern_confidence
+        score = (
+            10_000.0 * dimension_error
+            + 1_000.0 * geometry_error
+            + 100.0 * pattern_error
+        )
+        if score >= self._best_effort_score:
+            return
+
+        if rectangle is None:
+            assert rectangle_bounds is not None
+            rectangle = box(*rectangle_bounds)
+
+        self._best_effort_state = state
+        self._best_effort_validation = validation
+        self._best_effort_score = score
+        self._best_effort_rectangle = rectangle
+        self._best_effort_dimensions = (short_side, long_side)
+        self._best_effort_geometry_score = geometry_error
+        self.stats.best_effort_updates += 1
+        self._log(
+            f"[BEST_EFFORT] score={score:.3f} rectangle="
+            f"{long_side:.2f}x{short_side:.2f} reason={validation.reason}"
+        )
+
+    def _build_best_effort_solution(
+        self,
+        ignored_piece_ids: tuple[int, ...],
+    ) -> Solution:
+        """Build a clearly marked, visualization-only timeout result."""
+
+        assert self._best_effort_state is not None
+        assert self._best_effort_validation is not None
+        assert self._best_effort_rectangle is not None
+        assert self._best_effort_dimensions is not None
+        validation = self._best_effort_validation
+        short_side, long_side = self._best_effort_dimensions
+        warning = (
+            f"Search budget exhausted: {self.stats.budget_reason}; BEST EFFORT "
+            "only, not safe for mechanical execution; final validation failed: "
+            f"{validation.reason}"
+        )
+        return Solution(
+            success=True,
+            placed_pieces=tuple(
+                sorted(
+                    self._best_effort_state.placed_pieces,
+                    key=lambda value: value.piece_id,
+                )
+            ),
+            rectangle_width_mm=long_side,
+            rectangle_height_mm=short_side,
+            geometry_score=self._best_effort_geometry_score,
+            pattern_score=validation.pattern_score,
+            pattern_confidence=validation.pattern_confidence,
+            corner_layout_score=validation.corner_layout_score,
+            corner_layout_confidence=validation.corner_layout_confidence,
+            symmetry_score=validation.symmetry_score,
+            symmetry_confidence=validation.symmetry_confidence,
+            rectangle=self._best_effort_rectangle,
+            seams=validation.seams,
+            ignored_piece_ids=ignored_piece_ids,
+            best_effort=True,
+            validation_warning=warning,
         )
 
     def _select_card_fragments(
@@ -521,6 +748,9 @@ class CardPuzzleSolver:
         for permutation in itertools.permutations(pieces):
             rotation_sets = (orientations[piece.id] for piece in permutation)
             for rotations in itertools.product(*rotation_sets):
+                if self._budget_exceeded(entering_candidate=True):
+                    return found
+                self.stats.candidate_attempts += 1
                 self.stats.grid_candidate_attempts += 1
                 placed_pieces: list[PlacedPiece] = []
                 for slot, piece, rotation in zip(slots, permutation, rotations):
@@ -553,6 +783,11 @@ class CardPuzzleSolver:
                     self.pattern_config,
                 )
                 if not validation.valid:
+                    self._consider_best_effort(
+                        state,
+                        validation,
+                        axis_aligned=True,
+                    )
                     continue
                 self.stats.grid_valid_candidates += 1
                 found = True
@@ -598,6 +833,9 @@ class CardPuzzleSolver:
         for permutation in itertools.permutations(pieces):
             rotation_sets = (orientations[piece.id] for piece in permutation)
             for rotations in itertools.product(*rotation_sets):
+                if self._budget_exceeded(entering_candidate=True):
+                    return found
+                self.stats.candidate_attempts += 1
                 self.stats.strip_candidate_attempts += 1
                 placed_pieces: list[PlacedPiece] = []
                 cursor_y = 0.0
@@ -625,6 +863,11 @@ class CardPuzzleSolver:
                     self.pattern_config,
                 )
                 if not validation.valid:
+                    self._consider_best_effort(
+                        state,
+                        validation,
+                        axis_aligned=True,
+                    )
                     continue
                 self.stats.strip_valid_candidates += 1
                 found = True
@@ -645,10 +888,10 @@ class CardPuzzleSolver:
         return found
 
     def _dfs(self, state: SolverState, total_count: int) -> None:
+        if self._budget_exceeded(entering_node=True):
+            return
         self.stats.dfs_calls += 1
         self._stage_dfs_calls += 1
-        if self._stage_dfs_calls > self.config.max_search_nodes:
-            return
         self._log(f"[DFS] depth={len(state.used_piece_ids)-1} used={sorted(state.used_piece_ids)}")
         signature = self._signature(state)
         if signature in self._visited:
@@ -660,6 +903,7 @@ class CardPuzzleSolver:
             )
             if not validation.valid:
                 self.stats.final_rejections += 1
+                self._consider_best_effort(state, validation)
                 self._log(f"[FINAL] FAIL {validation.reason}")
                 return
             objective = self._validation_objective(validation)
@@ -706,6 +950,8 @@ class CardPuzzleSolver:
             return
 
         for candidate in self._generate_candidates(state):
+            if self._budget_exceeded(entering_candidate=True):
+                return
             self.stats.candidate_attempts += 1
             self._log(
                 f"[TRY] piece={candidate.piece.id} edge={candidate.edge.edge_id} "
@@ -771,6 +1017,8 @@ class CardPuzzleSolver:
             self.stats.placements += 1
             before = self._best_state
             self._dfs(child, total_count)
+            if self.stats.budget_exhausted:
+                return
             if self._optimal_found:
                 return
             if not self.config.find_best_solution and self._best_state is not None:
@@ -839,9 +1087,13 @@ class CardPuzzleSolver:
         output: list[_Candidate] = []
         unused = [piece for piece in self._pieces.values() if piece.id not in state.used_piece_ids]
         for open_edge in state.open_edges:
+            if self._budget_exceeded():
+                return output
             owner = state.placed_by_id(open_edge.piece_id)
             for piece in unused:
                 for edge in piece.edges:
+                    if self._budget_exceeded():
+                        return output
                     difference = abs(open_edge.length - edge.length)
                     exact = check_length_match(
                         open_edge.length,
@@ -890,6 +1142,8 @@ class CardPuzzleSolver:
                     )
                     seen: set[tuple[float, float, float]] = set()
                     for mapping, anchor in options:
+                        if self._budget_exceeded():
+                            return output
                         transform = calculate_pose(open_edge, edge, mapping, anchor)
                         key = (
                             round(transform.rotation_rad, 8),

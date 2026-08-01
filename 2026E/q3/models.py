@@ -37,6 +37,8 @@ class CardScene:
     corner_layout_confidence: float | None = None
     symmetry_score: float | None = None
     symmetry_confidence: float | None = None
+    best_effort: bool = False
+    detected_candidate_count: int = 0
+    discarded_candidate_ids: list[int] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     timings_ms: dict[str, float] = field(default_factory=dict)
-

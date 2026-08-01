@@ -124,21 +124,3 @@ def polygon_angles_deg(polygon: Polygon) -> tuple[float, ...]:
         cosine = float(np.clip(np.dot(previous, following) / denominator, -1.0, 1.0))
         output.append(math.degrees(math.acos(cosine)))
     return tuple(output)
-
-
-def interpolate_transform(
-    start: RigidTransform,
-    end: RigidTransform,
-    fraction: float,
-) -> RigidTransform:
-    fraction = min(1.0, max(0.0, fraction))
-    angle_delta = normalize_angle(end.rotation_rad - start.rotation_rad)
-    return RigidTransform(
-        normalize_angle(start.rotation_rad + angle_delta * fraction),
-        (
-            start.translation[0]
-            + (end.translation[0] - start.translation[0]) * fraction,
-            start.translation[1]
-            + (end.translation[1] - start.translation[1]) * fraction,
-        ),
-    )

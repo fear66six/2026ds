@@ -1,4 +1,4 @@
-"""Domain models shared by image input, search and visualization."""
+"""Domain models shared by image input and search."""
 
 from __future__ import annotations
 
@@ -246,6 +246,8 @@ class Solution:
     seams: tuple[SeamScore, ...] = ()
     ignored_piece_ids: tuple[int, ...] = ()
     reason: str | None = None
+    best_effort: bool = False
+    validation_warning: str | None = None
 
     @property
     def poses(self) -> tuple[dict[str, float | int], ...]:
@@ -269,6 +271,8 @@ class CardPuzzleInput:
     layout: str
     divider_mm: float
     image_path: str | None = None
+    detected_candidate_count: int = 0
+    discarded_candidate_ids: tuple[int, ...] = ()
 
     @property
     def pieces(self) -> tuple[Piece, ...]:

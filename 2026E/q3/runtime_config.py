@@ -13,7 +13,7 @@ class Q3RuntimeConfig(Q1RuntimeConfig):
     mode: str = "full_q3"
     authorization: str = "RUN_Q3"
     run_root: Path = Path("output/runs/q3")
-    card_layout: str = "top-bottom"
+    card_layout: str = "auto"
 
     def report_metadata(self) -> dict:
         return {

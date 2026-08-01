@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 import math
 
 import cv2
@@ -103,6 +104,7 @@ def _extract_corner_markers(
                 neighbours[first].add(second)
                 neighbours[second].add(first)
     groups: list[list[int]] = []
+    oversized_groups: list[list[int]] = []
     unseen = set(eligible)
     while unseen:
         seed = unseen.pop()
@@ -116,6 +118,76 @@ def _extract_corner_markers(
             pending.extend(attached)
         if config.corner_min_components <= len(group) <= config.corner_max_components:
             groups.append(group)
+        elif len(group) > config.corner_max_components:
+            oversized_groups.append(group)
+
+    # Dense face-card artwork can create a transitive chain from a genuine
+    # rank/suit index into the central illustration.  Do not discard that
+    # entire chain.  Recovery is deliberately limited to two substantial
+    # components (rank plus suit).  Permitting arbitrary small 3-component
+    # cliques here makes detailed Joker artwork look like several indices.
+    for connected_group in oversized_groups:
+        best_by_vertex: dict[int, tuple[tuple[float, float], list[int]]] = {}
+        group_size = config.corner_min_components
+        for subset_tuple in itertools.combinations(connected_group, group_size):
+            if any(
+                component_areas[label]
+                < config.corner_recovered_min_component_area_mm2
+                for label in subset_tuple
+            ):
+                continue
+            if any(
+                math.dist(
+                    component_centres[first].as_tuple(),
+                    component_centres[second].as_tuple(),
+                )
+                > config.corner_group_distance_mm
+                for first, second in itertools.combinations(subset_tuple, 2)
+            ):
+                continue
+            subset = list(subset_tuple)
+            total_area = sum(component_areas[label] for label in subset)
+            centre = Point(
+                sum(
+                    component_centres[label].x * component_areas[label]
+                    for label in subset
+                )
+                / total_area,
+                sum(
+                    component_centres[label].y * component_areas[label]
+                    for label in subset
+                )
+                / total_area,
+            )
+            distances = [
+                math.dist(centre.as_tuple(), vertex.as_tuple())
+                for vertex in observation.piece.vertices
+            ]
+            nearest_vertex = int(np.argmin(distances))
+            nearest_distance = distances[nearest_vertex]
+            if nearest_distance > config.corner_search_radius_mm:
+                continue
+            proximity = 1.0 - nearest_distance / max(
+                config.corner_search_radius_mm,
+                1e-9,
+            )
+            score = (
+                float(len(subset))
+                + min(1.0, total_area / 20.0)
+                + 0.5 * proximity
+            )
+            maximum_spacing = max(
+                math.dist(
+                    component_centres[first].as_tuple(),
+                    component_centres[second].as_tuple(),
+                )
+                for first, second in itertools.combinations(subset, 2)
+            )
+            quality = (score, -maximum_spacing)
+            current = best_by_vertex.get(nearest_vertex)
+            if current is None or quality > current[0]:
+                best_by_vertex[nearest_vertex] = (quality, subset)
+        groups.extend(value[1] for value in best_by_vertex.values())
 
     markers: list[CornerMarker] = []
     marker_labels: set[int] = set()
@@ -148,10 +220,12 @@ def _extract_corner_markers(
             + min(1.0, total_area / 20.0)
             + 0.5 * proximity
         )
-        # In every standard corner index the rank/letter is nearest the card
-        # corner and the small suit is farther inward.  This direction is
-        # colour- and suit-independent, and later distinguishes the canonical
-        # top-left/bottom-right layout from its horizontal mirror.
+        # A standard corner index runs from the rank toward the small suit.
+        # Usually the rank is nearest the fitted fragment vertex.  A narrow
+        # end strip can make the small suit geometrically nearer, however;
+        # for a two-component index the larger glyph is then the rank and the
+        # direction must be reversed.  This preserves chirality without
+        # mistaking an 8/suit pair for its horizontal mirror.
         ordered_labels = sorted(
             group,
             key=lambda label: math.dist(
@@ -161,6 +235,13 @@ def _extract_corner_markers(
         )
         outer = component_centres[ordered_labels[0]]
         inner = component_centres[ordered_labels[-1]]
+        if (
+            len(ordered_labels) == 2
+            and component_areas[ordered_labels[-1]]
+            >= config.corner_direction_area_flip_ratio
+            * component_areas[ordered_labels[0]]
+        ):
+            outer, inner = inner, outer
         direction_length = math.dist(outer.as_tuple(), inner.as_tuple())
         inward_direction = (
             Point(

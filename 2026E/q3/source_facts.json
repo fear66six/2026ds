@@ -12,13 +12,15 @@
     "requires_physical_verification": false
   },
   "card_solver_integration": {
-    "upstream": "2026E-7.31/q3/card_solver",
+    "upstream": "D:/OIK/Downloads/q3/card_solver (optimized from 2026E-7.31/q3/card_solver)",
     "production_copy": "2026E/q3/card_solver",
     "algorithm": [
       "polygon fragment detection",
       "rigid geometry search without scale or reflection",
       "Lab colour and red/black foreground seam scoring",
-      "line continuity, corner-marker and symmetry scoring"
+      "line continuity, corner-marker and symmetry scoring",
+      "scored four-piece selection from excess visual contours",
+      "wall-clock search budget with diagnostic-only best-effort results"
     ],
     "adapter": "q3/card_solver/image_input.py::card_puzzle_from_rectified",
     "entry": "q3/analyzer.py::CardSceneAnalyzer.analyze",
@@ -74,7 +76,9 @@
     "requires_physical_verification": true
   },
   "offline_validation": {
-    "upstream_regression": "22 passed, 11 skipped; tests forced to import 2026E/q3/card_solver",
+    "target_regression": "3 passed in 2026E/q3/tests",
+    "upstream_algorithm_regression": "22 passed; tests forced to import 2026E/q3/card_solver",
+    "upstream_image_pipeline": "2 passed, 14 skipped; synthetic fixture loaded only in the test process",
     "synthetic_pipeline": "Q1 paper detection, Q3 detection/solve and Q1 motion planning produced four moves and capture.png, plan.png, scene.json and piece_moves.json",
     "synthetic_rectangle_mm": [99.11715732739009, 69.20691912081179],
     "mock_controller": "initialize, single capture, four move executions, final HOME and shutdown completed without hardware access",

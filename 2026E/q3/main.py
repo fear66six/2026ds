@@ -37,6 +37,12 @@ def _add_camera_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--capture-burst", type=int, default=8)
     parser.add_argument("--settle-time-ms", type=int, default=200)
     parser.add_argument("--observe-stabilize-ms", type=int, default=300)
+    parser.add_argument(
+        "--card-layout",
+        choices=("auto", "top-bottom", "left-right"),
+        default="auto",
+        help="source/target divider on the rectified A4 board (default: auto)",
+    )
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -97,7 +103,7 @@ def _load_runtime(
     )
     _apply_robot_fields(config, robot_data)
     config.run_root = Path("output/runs/q3")
-    config.card_layout = "top-bottom"
+    config.card_layout = getattr(args, "card_layout", "auto")
     if args.camera_port:
         config.camera_port = args.camera_port
     return robot_data, config
