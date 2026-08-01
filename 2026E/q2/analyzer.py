@@ -116,6 +116,7 @@ class WhitePuzzleAnalyzer:
             )
 
         warnings: list[str] = []
+        warnings.extend(puzzle.detection_warnings)
         if not solution.success:
             warnings.append(solution.reason or "Q2_GEOMETRIC_SOLVE_FAILED")
         if solution.best_effort:

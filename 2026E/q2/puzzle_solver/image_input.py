@@ -45,6 +45,7 @@ class ImagePuzzleInput:
     divider_x_mm: float | None
     image_path: Path
     detected_candidate_count: int = 0
+    detection_warnings: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -109,6 +110,25 @@ def _piece_combination_score(
         _edge_compatibility_penalty(candidates),
         tuple(candidate.source_index for candidate in candidates),
     )
+
+
+def _area_outlier_warning(candidates: list[_RasterPieceCandidate]) -> str | None:
+    """Warn when one fragment is much smaller, but do not block execution."""
+
+    if len(candidates) != MAX_PIECES:
+        return None
+    areas = [candidate.piece.area for candidate in candidates]
+    median_area = float(np.median(areas))
+    minimum_area = float(min(areas))
+    if median_area <= 1e-9:
+        return None
+    if minimum_area < 0.55 * median_area:
+        return (
+            "Q2 detector found a fragment much smaller than the others "
+            f"(min={minimum_area:.1f} mm2, median={median_area:.1f} mm2); "
+            "check lighting or piece layout if plan overlays look wrong"
+        )
+    return None
 
 
 def _select_best_piece_candidates(
@@ -239,6 +259,7 @@ def load_q2_image_pieces(image_path: str | Path) -> ImagePuzzleInput:
         Piece(piece_id, candidate.piece.vertices)
         for piece_id, candidate in enumerate(selected)
     )
+    warn = _area_outlier_warning(candidates)
     return ImagePuzzleInput(
         pieces=pieces,
         paper_size_mm=(
@@ -258,6 +279,7 @@ def load_q2_image_pieces(image_path: str | Path) -> ImagePuzzleInput:
         ),
         image_path=path,
         detected_candidate_count=len(candidates),
+        detection_warnings=(warn,) if warn else (),
     )
 
 
@@ -343,6 +365,7 @@ def q2_puzzle_from_rectified(
         Piece(piece_id, candidate.piece.vertices)
         for piece_id, candidate in enumerate(selected)
     )
+    warn = _area_outlier_warning(candidates)
     return ImagePuzzleInput(
         pieces=pieces,
         paper_size_mm=(paper_width_mm, paper_height_mm),
@@ -351,6 +374,7 @@ def q2_puzzle_from_rectified(
         divider_x_mm=None,
         image_path=Path(image_path) if image_path is not None else Path("capture.png"),
         detected_candidate_count=len(candidates),
+        detection_warnings=(warn,) if warn else (),
     )
 
 

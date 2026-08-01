@@ -1,6 +1,4 @@
-from __future__ import annotations
-
-import json
+import pytest
 from pathlib import Path
 import sys
 
@@ -25,6 +23,8 @@ UPSTREAM_BOARD = PROJECT_ROOT / "q2" / "board_solution.png"
 
 
 def test_q2_camera_orientation_solve_and_q1_motion_contract() -> None:
+    if not UPSTREAM_BOARD.is_file():
+        pytest.skip(f"missing fixture image: {UPSTREAM_BOARD}")
     portrait = cv2.imread(str(UPSTREAM_BOARD), cv2.IMREAD_COLOR)
     assert portrait is not None
     snapshot = Snapshot(

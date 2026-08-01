@@ -395,6 +395,23 @@ def detect_divider_line(frame: np.ndarray, paper: PaperFrame) -> float:
     return candidate[0] if candidate is not None else paper.height_cm / 2.0
 
 
+def _q1_style_white_mask(frame_bgr: np.ndarray) -> np.ndarray:
+    """Supplemental white detection for dim fragments on a black mat."""
+
+    lab = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2LAB)
+    hsv = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2HSV)
+    l_chan = lab[:, :, 0]
+    _, lab_mask = cv2.threshold(l_chan, 110, 255, cv2.THRESH_BINARY)
+    hsv_mask = cv2.inRange(hsv, (0, 0, 100), (180, 90, 255))
+    blur = cv2.GaussianBlur(l_chan, (31, 31), 0)
+    contrast = cv2.subtract(l_chan, blur)
+    _, local_mask = cv2.threshold(contrast, 12, 255, cv2.THRESH_BINARY)
+    return cv2.bitwise_or(
+        cv2.bitwise_and(lab_mask, hsv_mask),
+        local_mask,
+    )
+
+
 def _segment_piece_mask(
     frame: np.ndarray,
     paper: PaperFrame,
@@ -404,8 +421,12 @@ def _segment_piece_mask(
     mask = np.zeros(hsv.shape[:2], dtype=np.uint8)
     for lower, upper in hsv_ranges:
         mask |= cv2.inRange(hsv, np.asarray(lower), np.asarray(upper))
+    # Union with the Q1-style mask so dim edges and thin glare breaks do not
+    # shrink a fragment into a tiny triangle (seen on Q2_3 in the field).
+    mask = cv2.bitwise_or(mask, _q1_style_white_mask(frame))
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=1)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=1)
     border = max(3, int(paper.px_per_cm * 0.35))
     mask[:border, :] = 0
     mask[-border:, :] = 0
@@ -496,7 +517,7 @@ def detect_pieces(
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=1)
     mask = cv2.dilate(mask, kernel, iterations=1)
-    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
     pieces: list[DetectedPiece] = []
     for contour in contours:
         area_px = float(cv2.contourArea(contour))
@@ -718,19 +739,47 @@ def _adaptive_polygon_candidate(
     return min(candidates, key=lambda item: item[:4])[4]
 
 
+def _refine_vertices_from_contour_cm(
+    piece: DetectedPiece,
+    paper: PaperFrame,
+    vertices_cm: np.ndarray,
+) -> np.ndarray:
+    """Line-fit the full raster contour, matching the Q1 edge refinement path."""
+
+    from q1.edge_refinement import refine_polygon_from_contour
+
+    contour_mm = contour_to_cm(piece.contour, paper) * 10.0
+    vertex_count = len(vertices_cm)
+    expected_sides = (
+        vertex_count if vertex_count in (3, 4) else None
+    )
+    refined = refine_polygon_from_contour(
+        contour_mm,
+        expected_sides=expected_sides,
+    )
+    if refined.valid:
+        return refined.refined_vertices_mm / 10.0
+    return vertices_cm
+
+
 def detect_polygon_vertices(piece: DetectedPiece, paper: PaperFrame) -> np.ndarray:
     """Simplify a raster contour while retaining at most five real corners."""
 
-    perimeter = cv2.arcLength(piece.contour, True)
+    working_contour = np.asarray(piece.contour, dtype=np.float32).reshape(-1, 1, 2)
+    hull = cv2.convexHull(working_contour)
+    if cv2.contourArea(hull) >= 0.97 * cv2.contourArea(working_contour):
+        working_contour = hull
+
+    perimeter = cv2.arcLength(working_contour, True)
     approximate: np.ndarray | None = None
     for ratio in (0.025, 0.04, 0.06, 0.08):
-        trial = cv2.approxPolyDP(piece.contour, ratio * perimeter, True)
+        trial = cv2.approxPolyDP(working_contour, ratio * perimeter, True)
         if len(trial) >= 3:
             approximate = trial
             if len(trial) <= MAX_VERTICES:
                 break
     if approximate is None or len(approximate) < 3:
-        approximate = cv2.approxPolyDP(piece.contour, 0.10 * perimeter, True)
+        approximate = cv2.approxPolyDP(working_contour, 0.10 * perimeter, True)
     vertices = _clean_polygon_vertices(contour_to_cm(approximate, paper))
     # A genuine triangle is already reduced to three vertices by the first
     # Douglas-Peucker pass.  Retrying with a very large epsilon based only on
@@ -744,5 +793,6 @@ def detect_polygon_vertices(piece: DetectedPiece, paper: PaperFrame) -> np.ndarr
             True,
         )
         vertices = _strip_spurious_vertices(simplified.reshape(-1, 2))
-    return _adaptive_polygon_candidate(piece, paper, vertices)
+    vertices = _adaptive_polygon_candidate(piece, paper, vertices)
+    return _refine_vertices_from_contour_cm(piece, paper, vertices)
 

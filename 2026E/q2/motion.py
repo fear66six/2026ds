@@ -275,18 +275,11 @@ def plan_white_puzzle_moves(
     source_by_id = {piece.id: piece for piece in puzzle.pieces}
     targets = target_solution_vertices(puzzle, solution)
     if config.edge_gap_enabled:
+        # The DFS records only tree edges (3 for 4 pieces).  Detect every
+        # collinear shared edge in the final target rectangle instead.
         targets = apply_uniform_shared_edge_gap(
             targets,
             config.edge_gap_mm,
-            shared_edge_pairs=(
-                (
-                    connection.first_piece_id,
-                    connection.first_edge_id,
-                    connection.second_piece_id,
-                    connection.second_edge_id,
-                )
-                for connection in solution.connections
-            ),
         )
     placed_items: list[PlacedPiece] = sorted(
         solution.placed_pieces,
