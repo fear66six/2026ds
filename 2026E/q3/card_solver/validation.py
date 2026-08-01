@@ -175,10 +175,14 @@ def check_overlap(
 
 def _rectangle_dimensions(rectangle: Polygon) -> tuple[float, float]:
     coordinates = list(rectangle.exterior.coords)[:-1]
+    if len(coordinates) < 3:
+        return math.inf, math.inf
     lengths = [
         math.dist(coordinates[index], coordinates[(index + 1) % len(coordinates)])
         for index in range(len(coordinates))
     ]
+    if len(lengths) < 2 or not all(math.isfinite(length) for length in lengths):
+        return math.inf, math.inf
     unique = sorted(lengths)
     return (0.5 * (unique[0] + unique[1]), 0.5 * (unique[-1] + unique[-2]))
 
@@ -516,26 +520,22 @@ def check_corner_marker_layout(
     return float(layout_score), float(confidence), None
 
 
-def check_pattern_symmetry(
+def _assemble_pattern_mask(
     pieces: list[PlacedPiece],
     observations: Mapping[int, PieceObservation],
     rectangle: Polygon,
     config: PatternConfig,
-) -> tuple[float, float, str | None]:
-    """Compare card ink with both axis mirrors and a 180-degree rotation."""
-
-    if sum(len(item.corner_markers) for item in observations.values()) < 2:
-        return 0.0, 0.0, None
+) -> tuple[np.ndarray, float, tuple[tuple[float, float], ...]] | None:
     coordinates = list(rectangle.exterior.coords)[:-1]
     if len(coordinates) != 4:
-        return 0.0, 0.0, None
+        return None
     origin = Point(float(coordinates[0][0]), float(coordinates[0][1]))
     next_corner = Point(float(coordinates[1][0]), float(coordinates[1][1]))
     previous_corner = Point(float(coordinates[-1][0]), float(coordinates[-1][1]))
     axis_x_length = math.dist(origin.as_tuple(), next_corner.as_tuple())
     axis_y_length = math.dist(origin.as_tuple(), previous_corner.as_tuple())
     if axis_x_length <= 1e-8 or axis_y_length <= 1e-8:
-        return 0.0, 0.0, None
+        return None
     axis_x = Point(
         (next_corner.x - origin.x) / axis_x_length,
         (next_corner.y - origin.y) / axis_x_length,
@@ -582,6 +582,117 @@ def check_pattern_symmetry(
             borderMode=cv2.BORDER_CONSTANT,
         )
         assembled |= (warped > 0).astype(np.uint8)
+    corner_pixels = tuple(
+        local_pixel(Point(float(x), float(y))) for x, y in coordinates
+    )
+    return assembled, pixels_per_mm, corner_pixels
+
+
+def check_corner_ink_layout(
+    pieces: list[PlacedPiece],
+    observations: Mapping[int, PieceObservation],
+    rectangle: Polygon,
+    config: PatternConfig,
+) -> tuple[float, float, str | None]:
+    """Use assembled corner ink when component-based index detection is absent."""
+
+    assembled_data = _assemble_pattern_mask(
+        pieces,
+        observations,
+        rectangle,
+        config,
+    )
+    if assembled_data is None:
+        return 0.0, 0.0, None
+    assembled, pixels_per_mm, corner_pixels = assembled_data
+    corners = [
+        Point(float(x), float(y)) for x, y in list(rectangle.exterior.coords)[:-1]
+    ]
+    rectangle_centre = Point(float(rectangle.centroid.x), float(rectangle.centroid.y))
+    rectangle_edges = [
+        (
+            math.dist(corners[index].as_tuple(), corners[(index + 1) % 4].as_tuple()),
+            corners[index],
+            corners[(index + 1) % 4],
+        )
+        for index in range(4)
+    ]
+    _, long_start, long_end = max(rectangle_edges, key=lambda item: item[0])
+    long_angle = math.atan2(long_end.y - long_start.y, long_end.x - long_start.x)
+    canonical_rotation = math.pi / 2.0 - long_angle
+    cosine = math.cos(canonical_rotation)
+    sine = math.sin(canonical_rotation)
+
+    def canonical_offset(point: Point) -> tuple[float, float]:
+        offset_x = point.x - rectangle_centre.x
+        offset_y = point.y - rectangle_centre.y
+        return (
+            cosine * offset_x - sine * offset_y,
+            sine * offset_x + cosine * offset_y,
+        )
+
+    canonical_indices = {
+        index
+        for index, corner in enumerate(corners)
+        if canonical_offset(corner)[0] * canonical_offset(corner)[1] > 0.0
+    }
+    if len(canonical_indices) != 2:
+        return 0.0, 0.0, None
+
+    radius = max(1, int(round(config.corner_search_radius_mm * pixels_per_mm)))
+    corner_areas: list[float] = []
+    for x, y in corner_pixels:
+        region = np.zeros_like(assembled)
+        cv2.circle(
+            region,
+            (int(round(x)), int(round(y))),
+            radius,
+            1,
+            thickness=cv2.FILLED,
+        )
+        corner_areas.append(
+            float(np.count_nonzero((assembled > 0) & (region > 0)))
+            / max(pixels_per_mm**2, 1e-9)
+        )
+    canonical_area = sum(
+        area for index, area in enumerate(corner_areas) if index in canonical_indices
+    )
+    mirrored_area = sum(
+        area for index, area in enumerate(corner_areas) if index not in canonical_indices
+    )
+    total_area = canonical_area + mirrored_area
+    minimum_evidence = 2.0 * config.suit_min_ink_area_mm2
+    confidence = min(1.0, total_area / max(minimum_evidence, 1e-9))
+    if confidence <= 0.0:
+        return 0.0, 0.0, None
+    mirrored_fraction = mirrored_area / max(total_area, 1e-9)
+    if confidence >= 0.5 and mirrored_area > 1.10 * canonical_area:
+        return (
+            float(mirrored_fraction),
+            float(confidence),
+            "card corner ink is on the mirrored top-right/bottom-left diagonal "
+            f"(canonical={canonical_area:.2f} mm2, mirrored={mirrored_area:.2f} mm2)",
+        )
+    return float(mirrored_fraction), float(confidence), None
+
+
+def check_pattern_symmetry(
+    pieces: list[PlacedPiece],
+    observations: Mapping[int, PieceObservation],
+    rectangle: Polygon,
+    config: PatternConfig,
+) -> tuple[float, float, str | None]:
+    """Compare assembled card ink with its 180-degree rotation."""
+
+    assembled_data = _assemble_pattern_mask(
+        pieces,
+        observations,
+        rectangle,
+        config,
+    )
+    if assembled_data is None:
+        return 0.0, 0.0, None
+    assembled, pixels_per_mm, _ = assembled_data
 
     # Rank/suit index components were removed in feature extraction.  Keep all
     # other ink, including a clipped centre pip incorrectly moved to an outer
@@ -618,17 +729,12 @@ def check_pattern_symmetry(
         denominator = np.count_nonzero(assembled) + np.count_nonzero(reference)
         return float(first_unmatched + second_unmatched) / max(float(denominator), 1.0)
 
-    errors = (
-        mismatch(np.fliplr(assembled)),
-        mismatch(np.flipud(assembled)),
-        mismatch(np.flipud(np.fliplr(assembled))),
-    )
-    symmetry_score = max(errors)
+    symmetry_score = mismatch(np.flipud(np.fliplr(assembled)))
     if symmetry_score > config.max_final_symmetry_error:
         return (
             float(symmetry_score),
             float(confidence),
-            "card face is not axis/centre symmetric "
+            "card face is not 180-degree centre symmetric "
             f"(error={symmetry_score:.3f})",
         )
     return float(symmetry_score), float(confidence), None
@@ -787,6 +893,15 @@ def check_final_assembly(
             pattern_config,
         )
     )
+    if strict_global_pattern and corner_layout_confidence <= 0.0:
+        corner_layout_score, corner_layout_confidence, corner_error = (
+            check_corner_ink_layout(
+                pieces,
+                matcher.observations,
+                rectangle,
+                pattern_config,
+            )
+        )
     if strict_global_pattern and corner_error is not None:
         return FinalValidation(
             False,
@@ -801,7 +916,7 @@ def check_final_assembly(
         rectangle,
         pattern_config,
     )
-    if strict_strip_pattern and symmetry_error is not None:
+    if strict_global_pattern and symmetry_error is not None:
         return FinalValidation(
             False,
             symmetry_error,

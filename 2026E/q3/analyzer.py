@@ -1,4 +1,4 @@
-"""Q3 card-fragment analysis using Q1 paper detection and rectification."""
+"""Q3-specific card-fragment detection, rectification and puzzle solving."""
 
 from __future__ import annotations
 
@@ -6,12 +6,11 @@ import time
 
 import numpy as np
 
-from q1.vision import detect_paper, rectify_paper
-
 from .card_solver import CardPuzzleSolver, PatternConfig, SolverConfig
 from .card_solver.config import production_solver_config
 from .card_solver.image_input import card_puzzle_from_rectified
 from .card_solver.models import Solution
+from .card_solver.piece_detection import detect_and_rectify_board
 from .models import CardPieceState, CardScene
 
 _LAYOUT_FALLBACKS = {
@@ -59,8 +58,9 @@ class CardSceneAnalyzer:
 
     def analyze(self, snapshot, cycle_index: int) -> CardScene:
         started = time.perf_counter()
-        paper = detect_paper(snapshot.frame)
-        if paper is None:
+        try:
+            board = detect_and_rectify_board(snapshot.frame, self.solver_config)
+        except ValueError as exc:
             return CardScene(
                 cycle_index=cycle_index,
                 image_path=snapshot.path,
@@ -70,20 +70,13 @@ class CardSceneAnalyzer:
                 paper_valid=False,
                 scene_valid=False,
                 solution_success=False,
-                warnings=["A4_PAPER_NOT_DETECTED"],
+                warnings=[f"A4_PAPER_NOT_DETECTED: {exc}"],
                 timings_ms={"total_ms": (time.perf_counter() - started) * 1000.0},
             )
 
-        self.last_paper = paper
+        self.last_paper = board
         pixels_per_mm = float(self.solver_config.canonical_pixels_per_mm)
-        rectified = rectify_paper(
-            snapshot.frame,
-            paper,
-            output_size=(
-                int(round(210.0 * pixels_per_mm)),
-                int(round(297.0 * pixels_per_mm)),
-            ),
-        )
+        rectified = board.image_bgr
         detection_finished = time.perf_counter()
 
         puzzle = None
@@ -94,7 +87,7 @@ class CardSceneAnalyzer:
             for layout in layouts:
                 puzzle = card_puzzle_from_rectified(
                     rectified,
-                    paper_size_mm=(210.0, 297.0),
+                    paper_size_mm=(board.width_mm, board.height_mm),
                     pixels_per_mm=pixels_per_mm,
                     layout=layout,
                     solver_config=self.solver_config,

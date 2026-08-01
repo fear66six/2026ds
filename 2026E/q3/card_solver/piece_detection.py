@@ -23,6 +23,26 @@ class RectifiedBoard:
     width_mm: float
     height_mm: float
     source_to_board_px: np.ndarray
+    source_corners_px: np.ndarray | None = None
+    landscape_in_source: bool = False
+
+    @property
+    def corners_px(self) -> np.ndarray:
+        if self.source_corners_px is not None:
+            return self.source_corners_px
+        return np.asarray(
+            (
+                (0.0, 0.0),
+                (self.image_bgr.shape[1] - 1.0, 0.0),
+                (self.image_bgr.shape[1] - 1.0, self.image_bgr.shape[0] - 1.0),
+                (0.0, self.image_bgr.shape[0] - 1.0),
+            ),
+            dtype=np.float32,
+        )
+
+    @property
+    def landscape_in_image(self) -> bool:
+        return self.landscape_in_source
 
 
 @dataclass(frozen=True)
@@ -83,6 +103,98 @@ def _quadrilateral_candidates(gray: np.ndarray) -> list[np.ndarray]:
     return output
 
 
+def _split_board_candidate(gray: np.ndarray) -> np.ndarray | None:
+    """Recover the clipped landscape board from its two dark halves."""
+
+    height, width = gray.shape
+    if height < 80 or width < 160:
+        return None
+    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+    _, dark = cv2.threshold(
+        blurred,
+        0,
+        255,
+        cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU,
+    )
+    column_coverage = np.mean(dark > 0, axis=0)
+    active_columns = column_coverage >= 0.20
+    runs: list[tuple[int, int]] = []
+    start: int | None = None
+    for x, active in enumerate(active_columns):
+        if active and start is None:
+            start = x
+        elif not active and start is not None:
+            runs.append((start, x - 1))
+            start = None
+    if start is not None:
+        runs.append((start, width - 1))
+
+    minimum_half_width = int(round(width * 0.25))
+    halves = [run for run in runs if run[1] - run[0] + 1 >= minimum_half_width]
+    best_pair: tuple[int, int, int, int] | None = None
+    best_score = -1.0
+    for left_run in halves:
+        for right_run in halves:
+            left_start, left_end = left_run
+            right_start, right_end = right_run
+            if left_end >= right_start:
+                continue
+            left_width = left_end - left_start + 1
+            right_width = right_end - right_start + 1
+            width_ratio = left_width / max(right_width, 1)
+            gap = right_start - left_end - 1
+            full_width = right_end - left_start + 1
+            divider_x = 0.5 * (left_end + right_start)
+            if not 0.72 <= width_ratio <= 1.38:
+                continue
+            if not max(2.0, width * 0.002) <= gap <= width * 0.06:
+                continue
+            if not width * 0.65 <= full_width <= width * 0.99:
+                continue
+            if not width * 0.35 <= divider_x <= width * 0.65:
+                continue
+            divider = gray[:, left_end + 1 : right_start]
+            if divider.size == 0 or float(np.mean(divider >= 155)) < 0.72:
+                continue
+            score = full_width * (1.0 - abs(1.0 - width_ratio))
+            if score > best_score:
+                best_score = score
+                best_pair = (left_start, left_end, right_start, right_end)
+    if best_pair is None:
+        return None
+
+    left, _, _, right = best_pair
+    paper_dark = dark[:, left : right + 1] > 0
+    row_coverage = np.mean(paper_dark, axis=1)
+    paper_rows = np.flatnonzero(row_coverage >= 0.20)
+    if paper_rows.size == 0:
+        return None
+    top = int(paper_rows[0])
+    bottom = int(paper_rows[-1])
+    paper_width = right - left
+    visible_height = bottom - top
+    if visible_height < height * 0.55:
+        return None
+    expected_height = paper_width / (297.0 / 210.0)
+    if abs(paper_width / max(visible_height, 1) - 297.0 / 210.0) > 0.35:
+        return None
+    edge_margin = max(3, int(round(height * 0.015)))
+    top_clipped = top <= edge_margin
+    bottom_clipped = bottom >= height - 1 - edge_margin
+    if top_clipped and not bottom_clipped:
+        top = int(round(bottom - expected_height))
+    elif bottom_clipped and not top_clipped:
+        bottom = int(round(top + expected_height))
+    elif top_clipped and bottom_clipped and expected_height > visible_height:
+        overflow = expected_height - visible_height
+        top = int(round(top - 0.5 * overflow))
+        bottom = int(round(bottom + 0.5 * overflow))
+    return np.asarray(
+        ((left, top), (right, top), (right, bottom), (left, bottom)),
+        dtype=np.float32,
+    )
+
+
 def detect_and_rectify_board(
     frame: np.ndarray,
     config: SolverConfig | None = None,
@@ -94,7 +206,10 @@ def detect_and_rectify_board(
         raise ValueError("a BGR colour image is required")
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     height, width = gray.shape
+    split_candidate = _split_board_candidate(gray)
     candidates = _quadrilateral_candidates(gray)
+    if split_candidate is not None:
+        candidates.append(split_candidate)
 
     image_ratio = width / max(height, 1)
     target_ratios = (210.0 / 297.0, 297.0 / 210.0)
@@ -136,12 +251,11 @@ def detect_and_rectify_board(
 
     top_width = float(np.linalg.norm(best[1] - best[0]))
     left_height = float(np.linalg.norm(best[3] - best[0]))
-    if top_width > left_height:
-        width_mm, height_mm = 297.0, 210.0
-    else:
-        width_mm, height_mm = A4_PORTRAIT_MM
+    landscape = top_width > left_height
+    width_mm, height_mm = A4_PORTRAIT_MM
     output_width = int(round(width_mm * active.canonical_pixels_per_mm))
     output_height = int(round(height_mm * active.canonical_pixels_per_mm))
+    source = best[[0, 3, 2, 1]] if landscape else best
     destination = np.asarray(
         (
             (0, 0),
@@ -151,7 +265,7 @@ def detect_and_rectify_board(
         ),
         dtype=np.float32,
     )
-    matrix = cv2.getPerspectiveTransform(best, destination)
+    matrix = cv2.getPerspectiveTransform(source, destination)
     rectified = cv2.warpPerspective(frame, matrix, (output_width, output_height))
     return RectifiedBoard(
         rectified,
@@ -159,6 +273,8 @@ def detect_and_rectify_board(
         width_mm,
         height_mm,
         matrix,
+        best,
+        landscape,
     )
 
 
@@ -201,7 +317,50 @@ def _interior_angle(points: np.ndarray, index: int) -> float:
     return float(np.degrees(np.arccos(cosine)))
 
 
-def _clean_polygon(points: np.ndarray, pixels_per_mm: float) -> np.ndarray:
+def _line_intersection(
+    first_start: np.ndarray,
+    first_end: np.ndarray,
+    second_start: np.ndarray,
+    second_end: np.ndarray,
+) -> np.ndarray | None:
+    first_direction = first_end - first_start
+    second_direction = second_end - second_start
+    denominator = float(
+        first_direction[0] * second_direction[1]
+        - first_direction[1] * second_direction[0]
+    )
+    if abs(denominator) <= 1e-6:
+        return None
+    offset = second_start - first_start
+    scale = float(
+        offset[0] * second_direction[1]
+        - offset[1] * second_direction[0]
+    ) / denominator
+    return first_start + scale * first_direction
+
+
+def _replace_short_edge_with_corner(
+    points: np.ndarray,
+    edge_index: int,
+    pixels_per_mm: float,
+) -> np.ndarray | None:
+    rotated = np.roll(points, -edge_index, axis=0)
+    first, second = rotated[0], rotated[1]
+    intersection = _line_intersection(rotated[-1], first, second, rotated[2])
+    if intersection is None:
+        return None
+    short_length = float(np.linalg.norm(second - first))
+    maximum_shift = max(8.0 * pixels_per_mm, 2.0 * short_length)
+    if float(np.linalg.norm(intersection - 0.5 * (first + second))) > maximum_shift:
+        return None
+    return np.vstack((intersection, rotated[2:])).astype(np.float32)
+
+
+def _clean_polygon(
+    points: np.ndarray,
+    config: SolverConfig,
+    pixels_per_mm: float,
+) -> np.ndarray:
     output = np.asarray(points, dtype=np.float32).reshape(-1, 2)
     for _ in range(8):
         if len(output) <= 3:
@@ -217,11 +376,21 @@ def _clean_polygon(points: np.ndarray, pixels_per_mm: float) -> np.ndarray:
         if len(collinear):
             output = np.delete(output, int(collinear[0]), axis=0)
             continue
-        short = np.where(lengths < 8.0 * pixels_per_mm)[0]
+        minimum_real_edge = max(
+            8.0,
+            config.min_physical_edge_mm - config.length_tolerance_mm,
+        ) * pixels_per_mm
+        short = np.where(lengths < minimum_real_edge)[0]
         if len(short):
-            delete_index = (int(short[np.argmin(lengths[short])]) + 1) % len(output)
-            output = np.delete(output, delete_index, axis=0)
-            continue
+            edge_index = int(short[np.argmin(lengths[short])])
+            merged = _replace_short_edge_with_corner(
+                output,
+                edge_index,
+                pixels_per_mm,
+            )
+            if merged is not None:
+                output = merged
+                continue
         break
     return output
 
@@ -236,7 +405,7 @@ def _polygon_from_contour(
     candidates: list[tuple[float, np.ndarray]] = []
     for ratio in (0.006, 0.009, 0.012, 0.016, 0.022, 0.03, 0.04, 0.055, 0.075):
         trial = cv2.approxPolyDP(contour, ratio * perimeter, True).reshape(-1, 2)
-        trial = _clean_polygon(trial, pixels_per_mm)
+        trial = _clean_polygon(trial, config, pixels_per_mm)
         if not config.min_vertices <= len(trial) <= config.max_vertices:
             continue
         area = abs(float(cv2.contourArea(trial.astype(np.float32).reshape(-1, 1, 2))))
@@ -267,13 +436,14 @@ def _polygon_from_contour(
 def _proposed_fill_ink_support(
     contour: np.ndarray,
     covering_contour: np.ndarray,
-    gray: np.ndarray,
-    dark_gray_threshold: int,
+    image_bgr: np.ndarray,
+    background_bgr: np.ndarray,
+    background_distance_threshold: float,
 ) -> float:
     """Measure non-background ink inside a proposed physical-edge fill."""
 
-    contour_mask = np.zeros(gray.shape, dtype=np.uint8)
-    covering_mask = np.zeros(gray.shape, dtype=np.uint8)
+    contour_mask = np.zeros(image_bgr.shape[:2], dtype=np.uint8)
+    covering_mask = np.zeros(image_bgr.shape[:2], dtype=np.uint8)
     cv2.drawContours(contour_mask, [contour], -1, 255, thickness=cv2.FILLED)
     cv2.drawContours(
         covering_mask, [covering_contour], -1, 255, thickness=cv2.FILLED
@@ -282,14 +452,16 @@ def _proposed_fill_ink_support(
     fill_count = int(np.count_nonzero(proposed_fill))
     if fill_count == 0:
         return 0.0
-    return float(
-        np.count_nonzero(gray[proposed_fill] >= dark_gray_threshold)
-    ) / fill_count
+    pixels = image_bgr[proposed_fill].astype(np.float32)
+    distances = np.linalg.norm(pixels - background_bgr, axis=1)
+    return float(np.count_nonzero(distances >= background_distance_threshold)) / fill_count
 
 
 def _recover_artwork_occluded_polygon(
     contour: np.ndarray,
-    gray: np.ndarray,
+    image_bgr: np.ndarray,
+    background_bgr: np.ndarray,
+    background_distance_threshold: float,
     config: SolverConfig,
     pixels_per_mm: float,
 ) -> np.ndarray | None:
@@ -318,8 +490,9 @@ def _recover_artwork_occluded_polygon(
     ink_support = _proposed_fill_ink_support(
         contour,
         hull,
-        gray,
-        config.artwork_dark_gray_threshold,
+        image_bgr,
+        background_bgr,
+        background_distance_threshold,
     )
     if ink_support < config.artwork_hull_min_ink_support_ratio:
         return None
@@ -328,7 +501,9 @@ def _recover_artwork_occluded_polygon(
 
 def _recover_artwork_clipped_rectangle(
     contour: np.ndarray,
-    gray: np.ndarray,
+    image_bgr: np.ndarray,
+    background_bgr: np.ndarray,
+    background_distance_threshold: float,
     config: SolverConfig,
     pixels_per_mm: float,
 ) -> np.ndarray | None:
@@ -345,12 +520,40 @@ def _recover_artwork_clipped_rectangle(
     ink_support = _proposed_fill_ink_support(
         contour,
         box.astype(np.int32),
-        gray,
-        config.artwork_dark_gray_threshold,
+        image_bgr,
+        background_bgr,
+        background_distance_threshold,
     )
     if ink_support < config.artwork_hull_min_ink_support_ratio:
         return None
     return _polygon_from_contour(box, config, pixels_per_mm)
+
+
+def _background_colour_model(
+    image_bgr: np.ndarray,
+    paper_seed: np.ndarray,
+    region: np.ndarray,
+    config: SolverConfig,
+) -> tuple[np.ndarray, float]:
+    active_region = region > 0
+    paper = paper_seed > 0
+    background_samples = active_region & ~paper
+    if not np.any(background_samples):
+        return np.zeros(3, dtype=np.float32), config.artwork_background_min_color_distance
+    image_float = image_bgr.astype(np.float32)
+    background_bgr = np.median(image_float[background_samples], axis=0)
+    color_distance = np.linalg.norm(image_float - background_bgr, axis=2)
+    background_noise = float(
+        np.percentile(
+            color_distance[background_samples],
+            config.artwork_background_noise_percentile,
+        )
+    )
+    distance_threshold = max(
+        config.artwork_background_min_color_distance,
+        config.artwork_background_noise_multiplier * background_noise,
+    )
+    return background_bgr, distance_threshold
 
 
 def _artwork_aware_seed(
@@ -359,6 +562,8 @@ def _artwork_aware_seed(
     region: np.ndarray,
     config: SolverConfig,
     pixels_per_mm: float,
+    background_bgr: np.ndarray,
+    distance_threshold: float,
 ) -> np.ndarray:
     """Add printed artwork that differs from the surrounding dark board.
 
@@ -379,26 +584,8 @@ def _artwork_aware_seed(
 
     paper = paper_seed > 0
     active_region = region > 0
-    background_samples = active_region & ~paper
-    if not np.any(background_samples):
-        return cv2.bitwise_and(paper_seed, region)
-
     image_float = image_bgr.astype(np.float32)
-    background_bgr = np.median(
-        image_float[background_samples],
-        axis=0,
-    )
     color_distance = np.linalg.norm(image_float - background_bgr, axis=2)
-    background_noise = float(
-        np.percentile(
-            color_distance[background_samples],
-            config.artwork_background_noise_percentile,
-        )
-    )
-    distance_threshold = max(
-        config.artwork_background_min_color_distance,
-        config.artwork_background_noise_multiplier * background_noise,
-    )
 
     radius = max(1, int(round(config.artwork_support_distance_mm * pixels_per_mm)))
     kernel_size = 2 * radius + 1
@@ -535,14 +722,26 @@ def _extract_fragment_contours(
 
 def _fragments_from_contours(
     contours: list[np.ndarray],
-    gray: np.ndarray,
+    image_bgr: np.ndarray,
+    background_bgr: np.ndarray,
+    background_distance_threshold: float,
     config: SolverConfig,
     pixels_per_mm: float,
 ) -> list[DetectedFragment]:
     """Fit valid three-to-five-sided polygons to raw fragment contours."""
 
     fragments: list[DetectedFragment] = []
+    image_height, image_width = image_bgr.shape[:2]
+    boundary_margin = max(2, int(round(1.5 * pixels_per_mm)))
     for contour in contours:
+        x, y, width, height = cv2.boundingRect(contour)
+        if (
+            x <= boundary_margin
+            or y <= boundary_margin
+            or x + width >= image_width - boundary_margin
+            or y + height >= image_height - boundary_margin
+        ):
+            continue
         area_px = float(cv2.contourArea(contour))
         area_mm2 = area_px / pixels_per_mm**2
         if not config.min_piece_area_mm2 <= area_mm2 <= config.max_piece_area_mm2:
@@ -550,18 +749,20 @@ def _fragments_from_contours(
         polygon = _polygon_from_contour(contour, config, pixels_per_mm)
         recovered_polygon = _recover_artwork_occluded_polygon(
             contour,
-            gray,
+            image_bgr,
+            background_bgr,
+            background_distance_threshold,
             config,
             pixels_per_mm,
         )
-        if recovered_polygon is not None and (
-            polygon is None or len(recovered_polygon) < len(polygon)
-        ):
+        if recovered_polygon is not None:
             polygon = recovered_polygon
         if polygon is not None and len(polygon) == 5:
             recovered_rectangle = _recover_artwork_clipped_rectangle(
                 contour,
-                gray,
+                image_bgr,
+                background_bgr,
+                background_distance_threshold,
                 config,
                 pixels_per_mm,
             )
@@ -569,7 +770,7 @@ def _fragments_from_contours(
                 polygon = recovered_rectangle
         if polygon is None:
             continue
-        full_mask = np.zeros(gray.shape, dtype=np.uint8)
+        full_mask = np.zeros(image_bgr.shape[:2], dtype=np.uint8)
         # The fitted polygon is physical paper support. Filling the raw white
         # contour would retain notches made by dark artwork and would remove
         # exactly the texture later needed for seam checks.
@@ -633,12 +834,20 @@ def detect_fragments(
     else:
         region[:, : max(0, divider_px - exclusion)] = 255
     paper_seed = cv2.bitwise_and(paper_seed, region)
+    background_bgr, background_distance_threshold = _background_colour_model(
+        image,
+        paper_seed,
+        region,
+        active,
+    )
     artwork_seed = _artwork_aware_seed(
         image,
         paper_seed,
         region,
         active,
         board.pixels_per_mm,
+        background_bgr,
+        background_distance_threshold,
     )
 
     stock_fragments = _fragments_from_contours(
@@ -647,7 +856,9 @@ def detect_fragments(
             paper_seed,
             board.pixels_per_mm,
         ),
-        gray,
+        image,
+        background_bgr,
+        background_distance_threshold,
         active,
         board.pixels_per_mm,
     )
@@ -657,7 +868,9 @@ def detect_fragments(
             paper_seed,
             board.pixels_per_mm,
         ),
-        gray,
+        image,
+        background_bgr,
+        background_distance_threshold,
         active,
         board.pixels_per_mm,
     )
