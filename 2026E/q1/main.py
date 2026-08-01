@@ -114,6 +114,7 @@ def _apply_robot_fields(config: Q1RuntimeConfig, data: dict) -> None:
         "target_scale",
         "edge_gap_enabled",
         "edge_gap_mm",
+        "q1_edge_gap_mm",
     )
     for key in keys:
         if key in data and data[key] is not None:
@@ -175,7 +176,7 @@ def _build_analyzer(config: Q1RuntimeConfig) -> SceneAnalyzer:
     return SceneAnalyzer(
         target_origin_mm=config.target_origin_mm,
         target_scale=config.target_scale,
-        edge_gap_mm=config.edge_gap_mm if config.edge_gap_enabled else 0.0,
+        edge_gap_mm=config.q1_effective_edge_gap_mm(),
         center_tolerance_mm=config.place_center_tolerance_mm,
         angle_tolerance_deg=config.place_angle_tolerance_deg,
         vertex_tolerance_mm=config.vertex_max_error_mm,

@@ -107,7 +107,7 @@ def test_q3_move_planning_applies_q1_point_specific_z_compensation():
         data,
         float(move.release_point_target_mm[0]),
         float(move.release_point_target_mm[1]),
-        float(config.release_height),
+        float(config.pick_height),
     )
     assert move.source_pose_robot.z == pytest.approx(expected_pick_z, abs=1e-6)
     assert move.target_pose_robot.z == pytest.approx(expected_release_z, abs=1e-6)

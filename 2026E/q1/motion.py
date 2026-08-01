@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from .calibration import ArmCoordinateMapper
+from .calibration import ArmCoordinateMapper, contact_height_mm
 from .config import DIVIDER_Y_CM
 from .geometry import (
     apply_rigid_transform,
@@ -29,7 +29,7 @@ from .wrist import (
 )
 
 
-PLACE_ORDER = ("P4", "P3", "P2", "P1")
+PLACE_ORDER = ("P1", "P2", "P3", "P4")
 
 
 def plan_single_move(
@@ -88,15 +88,15 @@ def plan_single_move(
     if mapper.is_calibrated():
         if None in (
             config.pick_height,
-            config.release_height,
             config.transfer_transit_z,
             config.transfer_move_duration_ms,
         ):
             raise RuntimeError("CALIBRATION_REQUIRED: 缺少抓取/释放高度或 transfer 参数")
+        low_z = contact_height_mm(config.pick_height)
         source_robot = mapper.paper_to_robot(
             source.x_mm,
             source.y_mm,
-            float(config.pick_height),
+            low_z,
             roll_deg=0.0,
         )
         source_robot.x += float(config.pick_robot_xy_offset_mm[0])
@@ -105,7 +105,7 @@ def plan_single_move(
         target_robot = mapper.paper_to_robot(
             target.x_mm,
             target.y_mm,
-            float(config.release_height),
+            low_z,
             roll_deg=0.0,
         )
         swing_azimuth_deg = smaller_azimuth_angle_deg(
@@ -246,7 +246,7 @@ def plan_piece_moves(
     mapper: ArmCoordinateMapper,
     config: Q1RuntimeConfig,
 ) -> list[PieceMove]:
-    """Build one large-to-small queue from the single initial observation."""
+    """Build one small-to-large queue from the single initial observation."""
     if not scene.scene_valid:
         raise RuntimeError("PLAN_FAILED: initial scene is invalid")
 

@@ -6,7 +6,7 @@ import math
 
 import numpy as np
 
-from q1.calibration import ArmCoordinateMapper
+from q1.calibration import ArmCoordinateMapper, contact_height_mm
 from q1.geometry import (
     apply_uniform_shared_edge_gap,
     apply_rigid_transform,
@@ -120,12 +120,13 @@ def _build_move(
         rotation_delta_deg,
     )
 
-    if config.pick_height is None or config.release_height is None:
-        raise RuntimeError("CALIBRATION_REQUIRED: missing pick/release height")
+    if config.pick_height is None:
+        raise RuntimeError("CALIBRATION_REQUIRED: missing pick height")
+    low_z = contact_height_mm(config.pick_height)
     source_robot = mapper.paper_to_robot(
         source.x_mm,
         source.y_mm,
-        float(config.pick_height),
+        low_z,
         roll_deg=0.0,
     )
     source_robot.x += float(config.pick_robot_xy_offset_mm[0])
@@ -133,7 +134,7 @@ def _build_move(
     target_robot = mapper.paper_to_robot(
         target.x_mm,
         target.y_mm,
-        float(config.release_height),
+        low_z,
         roll_deg=0.0,
     )
 

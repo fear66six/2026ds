@@ -11,6 +11,14 @@ from .models import RobotPose
 from .wrist import WristRotationResult, choose_wrist_release_roll
 
 
+def contact_height_mm(pick_height: float | None) -> float:
+    """Paper-center contact Z shared by pick and release; plane slope applied elsewhere."""
+
+    if pick_height is None:
+        raise RuntimeError("CALIBRATION_REQUIRED: missing pick_height")
+    return float(pick_height)
+
+
 class ArmCoordinateMapper:
     """只接受磁盘中的显式标定矩阵，不提供虚假默认矩阵。"""
 

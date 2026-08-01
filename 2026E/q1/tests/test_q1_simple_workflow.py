@@ -219,7 +219,7 @@ def test_controller_gate_blocks_before_any_device_initialization(
     assert robot.executed == []
 
 
-def test_initial_scene_builds_large_to_small_piece_queue() -> None:
+def test_initial_scene_builds_small_to_large_piece_queue() -> None:
     world = SimulationWorld()
     snapshot = StaticImageCamera(world.snapshot).capture_snapshot(0)
     scene = SceneAnalyzer().analyze(snapshot, 0)
@@ -230,5 +230,5 @@ def test_initial_scene_builds_large_to_small_piece_queue() -> None:
         Q1RuntimeConfig(),
     )
 
-    assert [move.template_id for move in moves] == ["P4", "P3", "P2", "P1"]
+    assert [move.template_id for move in moves] == ["P1", "P2", "P3", "P4"]
     assert [move.cycle_index for move in moves] == [0, 1, 2, 3]
