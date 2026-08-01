@@ -12,24 +12,42 @@
     "requires_physical_verification": false
   },
   "solver_integration": {
-    "upstream": "q2/puzzle_solver",
+    "upstream": "D:/OIK/Downloads/q2/puzzle_solver",
     "production_copy": "2026E/q2/puzzle_solver",
     "adapter": "q2/puzzle_solver/image_input.py::q2_puzzle_from_rectified",
+    "production_adapter_sha256": "FA6188FE3D05AE8E1682A49BC8C5F87D3CAACFAB52F417616D0FFCA95B245EC0",
     "entry": "q2/analyzer.py::WhitePuzzleAnalyzer.analyze",
-    "algorithm": "white-fragment raster polygons followed by rigid edge matching, DFS/backtracking and rectangle validation",
+    "algorithm": "white-fragment raster polygons followed by rigid edge matching, DFS/backtracking, cached oriented bounds, rectangle-fill lower-bound pruning, cached edge classification and final rectangle validation",
     "executable_gate": "solution.success and not solution.best_effort and solution.official_dimensions_valid is True",
     "upstream_sha256": {
       "config.py": "79F87990CDF0D5EBA354322035E354BA12256D9A5EC2A0262160A6DD8112DBC2",
-      "geometry.py": "C54CE9AA33F0260029F4735A44CD11E94A321D89411F0C54331FD722C5EEEFB1",
+      "geometry.py": "3545F34AAB47E9569364FADD8C5E76FBB2617B2450C002E08CE57E211F95FB41",
       "image_input.py": "98C511595ECD986C195B8C2784C6DD7E40D58FD17D29121E43265D8FF2AD45D6",
-      "models.py": "C19FB9F3837B7950FB0C892D4E7A651DA932198B8C264B78F2E091333B6C6734",
+      "models.py": "434BF529A83936DA27A59044FFB75B0BDB38C008190917FA74E57009C67A07A4",
       "raster_detection.py": "0C0BFD74B2E469F1C4AF0F639FBA59EB005D9FC7E5761448B7F1AB56E775A258",
       "sample_data.py": "385E8E60C24864E80E599F3B0383DCAE364A7BD6D127CD997E083B4B81ADB9DE",
-      "solver.py": "087B0039588E2D5B30AD45E83CB2C8D74B4457D3B4CB9924B49A520F6E60A216",
-      "validation.py": "F2AA66CA245EDA3A362915C350EEC32973ED0734E542F934F8271D33E3FB88BF",
+      "solver.py": "30A30F379503DAF6FBEC601B9572ECD75BFAD465953405608240A0BC7E671A1F",
+      "validation.py": "BEC62992D4A732B825C6E22B35626A41F2363F04120C1CFED517689CD57D8C15",
       "visualization.py": "697C2291A5AD5D2D421F0543C7E07435592923B4467138B0E2987D8A685C2A5A"
     },
     "source_type": "project source code",
+    "confidence": "A",
+    "requires_physical_verification": true
+  },
+  "offline_validation": {
+    "q2_integration": "2 passed",
+    "upstream_suite_against_production_copy": "38 passed, 18 skipped because optional image fixtures are absent",
+    "board_solution_result": "paper_valid=true, scene_valid=true, exact_solution=true, 4 pieces, rectangle about 100.75x70.72 mm",
+    "jetson_three_piece_regression": "Runs 20260730_230501_689513, 20260730_230528_392124 and 20260730_230544_698842 originally misdetected the left source half as a portrait A4 and retained only one piece. Raising q1 split-half dark-column coverage from 0.20 to 0.30 restores the full landscape A4, detects all 3 pieces, produces exact official-size solutions around 100x81 mm and builds 3 moves for every capture.",
+    "board_solution_solver_stats": {
+      "elapsed_seconds": 1.675,
+      "candidate_attempts": 11130,
+      "oriented_bounds_calculations": 5490,
+      "area_lower_bound_rejections": 3599,
+      "edge_match_cache_hits": 4668,
+      "edge_match_cache_misses": 1408
+    },
+    "source_type": "offline execution evidence",
     "confidence": "A",
     "requires_physical_verification": true
   },
@@ -38,11 +56,13 @@
       "q1.vision.detect_paper and rectify_paper",
       "q1.calibration.ArmCoordinateMapper",
       "q1.geometry.polygon_maximum_clearance_point",
+      "q1.geometry.apply_uniform_shared_edge_gap",
       "q1.executors.nexarm.NexArmRobotExecutor",
       "q1.magnet.STM32MagnetController",
       "q1/config/robot_config.json"
     ],
     "coordinate_contract": "Q1 rectifies the landscape camera view into portrait A4 paper coordinates; source is the upper half and the solved rectangle is centered in the lower half",
+    "gap_contract": "q1/config/robot_config.json edge_gap_enabled and edge_gap_mm control Q2 target separation; enabled detects solved shared edges and applies equal normal-gap rigid translations, disabled preserves the exact solved rectangle",
     "source_type": "project source code and engineering decision",
     "confidence": "A+D",
     "requires_physical_verification": true

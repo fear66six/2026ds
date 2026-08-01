@@ -360,11 +360,11 @@
 ## F-037 队友 pintu 与当前 Q1 的可复用差异已完成源码对照
 
 - 相同部分：`pintu/algorithm/q1` 与当前 Q1 的 `vision.py`、`white_segmentation.py`、`edge_refinement.py` SHA256 分别相同，因此没有证据支持替换当前视觉主链路。当前 Q1 另外保留最大内接吸取点和已完成的残缺 A4 适配。
-- 可复用部分：`pintu/algorithm/q1/puzzle_solver.py` 按 `target_scale` 构造模板特征；`pieces.py::apply_edge_gap_mm` 将每片向目标中心外移动 `gap/2`；`motion.py` 使用 `P4,P3,P2,P1` 大到小顺序；`puzzle_runner.py::_rotate_duration_ms` 按 roll 角度比例分配旋转时间。
+- 可复用部分：`pintu/algorithm/q1/puzzle_solver.py` 按 `target_scale` 构造模板特征；`motion.py` 使用 `P4,P3,P2,P1` 大到小顺序；`puzzle_runner.py::_rotate_duration_ms` 按 roll 角度比例分配旋转时间。当前 `pieces.py::apply_edge_gap_mm` 已改为对 Q1 五组共享边求等法向间距的刚体平移，不再采用中心径向位移。
 - 执行层复用边界：用户后续以队友实机效果为依据，明确要求采用 `puzzle_runner.py::execute_one` 的分段 transfer，因此当前 Q1 已复用纯 Z 抬升、`Z=120` 同高转运和吸点上空独立 roll；仍不采用可选相对 X peel，也不采用 `arm_controller.py` 的坐标轮询。
-- 当前合并结果：生产配置采用 `edge_gap_mm=2.0`，模板分配使用 `target_scale=1.03`，队列为 `P4→P3→P2→P1`。单片顺序为 pick-ready → descend → magnet ON → lift → rotate → transit → place-ready → descend → magnet OFF → done-lift；时长采用 `1500/800/800/1200 ms` 基准和 `200 ms` settle。三组实拍全部规划成功，Mock 确认非零 roll 单片共下发八条 `set_pose`，磁铁切换位于两个低位动作之后。
+- 当前合并结果：生产配置采用 `edge_gap_enabled=true` 和 `edge_gap_mm=5.0`，五条相邻边的计划法向间距均为 5 mm，最大对应顶点计划距离约 10.69 mm，低于赛题 20 mm 上限；扩展布局仍居中于原目标中心。将 `edge_gap_enabled` 设为 `false` 时完全跳过碎片平移，恢复无附加间距的原始目标模板，同时保留 `edge_gap_mm` 数值供再次启用。模板分配使用 `target_scale=1.03`，队列为 `P4→P3→P2→P1`。单片顺序为 pick-ready → descend → magnet ON → lift → rotate → transit → place-ready → descend → magnet OFF → done-lift；时长采用 `1500/800/800/1200 ms` 基准和 `200 ms` settle。
 - 可信等级：A（两套源码、哈希、三组实图离线执行与 Mock 轨迹）+ D（队友实机效果与合并策略）；是否需要实机验证：需要。
-- 最后核查时间：2026-07-31。
+- 最后核查时间：2026-08-01。
 
 ## F-038 当前 Q1 transfer 已对齐 pintu 的实际主执行链
 
@@ -386,6 +386,28 @@
 
 - 赛题事实：`docs/E题_拼图装置.pdf` 第 2 页规定现场碎片不超过 4 片、每片不超过 5 边、每边不小于 20 mm、每片至少一边属于外框，成品矩形长边为 90–120 mm、短边为 50–90 mm；扑克牌题还要求牌面花纹对应。来源类型为正式赛题资料，可信等级 B。
 - 算法事实：`2026E/q3/card_solver` 来自 `2026E-7.31/q3/card_solver`；除 `image_input.py` 新增“接收已矫正 A4 图”适配器及 `__init__.py` 导出外，其余算法文件保持同源。`CardPuzzleSolver` 使用无缩放、无镜像的刚体搜索，并以 Lab、红黑前景、线连续性、角标和对称性评价花纹拼接。来源类型为源码，可信等级 A。
-- 集成事实：`q3/analyzer.py::CardSceneAnalyzer.analyze` 复用 Q1 的 `detect_paper/rectify_paper`，将横拍 A4 统一为 `210×297 mm` 竖向纸面坐标；`q3/motion.py::plan_card_moves` 将求解结果转成 Q1 `SingleMovePlan`。相机、手眼标定（含 `surface_z_plane_mm`）、最大内接吸点、NexArm executor、摆臂 roll 补偿、STM32 磁铁会话及 `q1/config/robot_config.json` 均直接复用，不在 Q3 内复制矩阵或高度。
+- 集成事实：`q3/analyzer.py::CardSceneAnalyzer.analyze` 使用 `q3/card_solver/piece_detection.py::detect_and_rectify_board` 检测有色横向 A4，并以 `297×210 mm` 横向纸面进行扑克牌识别；`q3/motion.py::plan_card_moves` 再交换纸面轴，保持 Q1 标定使用的 `210×297 mm` 逻辑坐标，并将结果转成 Q1 `SingleMovePlan`。相机、手眼标定（含 `surface_z_plane_mm`）、最大内接吸点、NexArm executor、摆臂 roll 补偿、STM32 磁铁会话及 `q1/config/robot_config.json` 均直接复用，不在 Q3 内复制矩阵或高度。
 - 离线证据：正式算法副本通过队友可用测试 `22 passed, 11 skipped`；合成图得到 4 片、约 `99.12×69.21 mm` 成品、4 个完整动作和 `capture.png/plan.png/scene.json/piece_moves.json`；Mock 控制器完成初始化、单次拍照、4 片执行、最终 HOME 和关闭；`q3/tests/test_q1_calibration_reuse.py` 确认 Q3 规划位姿继承最新接触面 Z 补偿。可信等级 A；实机成像、抓放及花纹方向仍需验证。
-- 最后核查时间：2026-07-31。
+- 新底色证据：实拍 `D:/OIK/Downloads/20260730_215555_010839/capture.png` 的青蓝 A4 可被 Q3 检测器矫正为 `297×210 mm`，分界线识别为 `left-right @ 149.8 mm`，并检出 4 片；完整求解在 60 秒预算结束时返回 4 片 best-effort 可执行解。来源类型为实拍离线运行，可信等级 A+D；仍需 Jetson 规划图和实机抓放验证。
+- 最后核查时间：2026-08-01。
+
+## F-041 Q2 几何求解器已同步 2026-08-01 优化版
+
+- 来源确认事实：`D:/OIK/Downloads/q2/puzzle_solver` 相比原 `2026E/q2/puzzle_solver` 更新了 `geometry.py`、`models.py`、`solver.py`、`validation.py`；新版本为搜索状态缓存最小旋转外接矩形，增加矩形填充面积下界剪枝和边长匹配分类缓存。外部 `PuzzleSolver.solve()`、`Solution` 与 Q2 主入口契约保持不变。来源类型为源码静态对比，可信等级 A。
+- 集成边界：上述四个核心文件已按 SHA256 同步；`config.py`、`raster_detection.py`、`sample_data.py`、`visualization.py` 和 `__init__.py` 原本已与下载版一致。本地 `image_input.py::q2_puzzle_from_rectified` 是正式 Q2 的 Q1 纸面适配层，继续保留，没有被上游较短文件覆盖。
+- 离线证据：`2026E/q2/tests` 为 `2 passed`；下载版测试强制导入生产副本后为 `38 passed, 18 skipped`，跳过项均为可选图片夹具缺失。`board_solution.png` 全链得到 4 片精确解和约 `100.75×70.72 mm` 矩形；本次运行执行 5490 次外接矩形计算、3599 次面积下界剪枝、4668 次边匹配缓存命中。可信等级 A；当前 K230 实拍和实机抓放仍需验证。
+- 最后核查时间：2026-08-01。
+
+## F-042 Q1/Q2/Q3 统一使用目标碎片间距开关
+
+- 来源确认事实：`2026E/q1/config/robot_config.json` 的首个配置项 `edge_gap_enabled` 和数值项 `edge_gap_mm` 由 `q1.main::_apply_robot_fields` 载入，因此 `Q2RuntimeConfig`、`Q3RuntimeConfig` 通过继承 Q1 运行时配置读取同一组实时值。来源类型为源码，可信等级 A。
+- 实现事实：Q1 保留固定 P1-P4 五接缝等距平移；Q2/Q3 在求解与目标居中完成后调用 `q1.geometry.apply_uniform_shared_edge_gap`，自动识别目标多边形的共线重叠边，并以法向约束最小二乘计算每片刚体平移。`edge_gap_enabled=false` 时三题都不增加间距，`true` 时三题均使用 `edge_gap_mm`。来源类型为源码，可信等级 A。
+- 离线证据：四矩形通用布局的四条接缝均为 `5.000000 mm`，关闭时全部顶点逐点不变，启用前后整体包围框中心一致；Q2/Q3 现有测试合计 `5 passed`。可信等级 A；任意实拍碎片接缝和机械误差抵消效果仍需实机验证。
+- 最后核查时间：2026-08-01。
+
+## F-043 Q2 三片实拍失败源于横向 A4 被误识别为左半板
+
+- 实拍证据：Jetson 运行 `20260730_230501_689513`、`20260730_230528_392124`、`20260730_230544_698842` 的抓拍均清楚包含 3 个分离白片，但原 `scene.json` 都记录 `detected_candidate_count=1`、`pieces=1`；求解统计的 `area_lower_bound_rejections=0`，失败发生在 gap 与运动规划之前。来源类型为实机输出，可信等级 A；不需要运动即可复现。
+- 根因事实：`q1.vision::_find_paper_frame_from_split_halves` 原以暗像素列覆盖率 `0.20` 分割左右黑区，实拍白分界线受阴影和上下裁切影响仍有约 `0.21-0.35` 暗覆盖率，左右区域被连成一个轮廓；后续纸框退化为约 `x=95..615` 的左半板，并把它放大成整张 A4，导致两个碎片面积超过 Q2 检测上限。来源类型为源码与逐像素离线分析，可信等级 A。
+- 修复与验证：暗列覆盖率阈值调整为 `0.30` 后，三张原始抓拍均恢复约 `x=100..1138` 的完整横向 A4，检出 3 片，并分别得到约 `100.00×81.06`、`100.15×80.97`、`100.03×80.58 mm` 的精确合法解和 3 条动作规划。Q1 横向纸框回归 `3 passed`，Q1/Q2 主流程相关测试 `6 passed`。来源类型为离线执行证据，可信等级 A；实机重新抓拍仍需验证。
+- 最后核查时间：2026-08-01。

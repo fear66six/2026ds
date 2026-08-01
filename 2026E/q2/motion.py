@@ -8,6 +8,7 @@ import numpy as np
 
 from q1.calibration import ArmCoordinateMapper
 from q1.geometry import (
+    apply_uniform_shared_edge_gap,
     apply_rigid_transform,
     compute_rigid_transform,
     polygon_maximum_clearance_point,
@@ -272,6 +273,8 @@ def plan_white_puzzle_moves(
 
     source_by_id = {piece.id: piece for piece in puzzle.pieces}
     targets = target_solution_vertices(puzzle, solution)
+    if config.edge_gap_enabled:
+        targets = apply_uniform_shared_edge_gap(targets, config.edge_gap_mm)
     placed_items: list[PlacedPiece] = sorted(
         solution.placed_pieces,
         key=lambda item: source_by_id[item.piece_id].area,

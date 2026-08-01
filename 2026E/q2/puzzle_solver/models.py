@@ -9,6 +9,7 @@ from typing import Iterable, Sequence
 from shapely.geometry import Polygon
 
 from .geometry import (
+    OrientedBounds,
     Point,
     RigidTransform,
     as_point,
@@ -175,6 +176,11 @@ class SolverState:
     used_piece_ids: set[int]
     open_edges: list[OpenEdge]
     connections: list[Connection] = field(default_factory=list)
+    oriented_bounds: OrientedBounds | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
 
     def copy(self) -> "SolverState":
         """Copy mutable containers while sharing immutable geometry objects."""
@@ -184,6 +190,7 @@ class SolverState:
             used_piece_ids=set(self.used_piece_ids),
             open_edges=list(self.open_edges),
             connections=list(self.connections),
+            oriented_bounds=self.oriented_bounds,
         )
 
     def placed_by_id(self, piece_id: int) -> PlacedPiece:

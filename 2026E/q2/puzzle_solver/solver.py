@@ -7,15 +7,17 @@ import math
 import time
 from typing import Iterable, Sequence
 
-from shapely.geometry import MultiPoint, Polygon
+from shapely.geometry import Polygon
 
 from .config import SolverConfig
 from .geometry import (
+    OrientedBounds,
     Point,
     RigidTransform,
+    extend_oriented_bounds,
     normalize_angle,
+    oriented_bounds_from_points,
     polygon_corner_angles_deg,
-    rectangle_dimensions,
 )
 from .models import (
     Connection,
@@ -28,10 +30,11 @@ from .models import (
 )
 from .validation import (
     FinalValidation,
-    check_bbox,
+    check_area_lower_bound,
     check_correct_side,
     check_final_rectangle,
     check_length_match,
+    check_oriented_bounds,
     check_overlap,
     check_vertex_distance,
 )
@@ -49,6 +52,7 @@ class SearchStats:
     side_rejections: int = 0
     vertex_rejections: int = 0
     bbox_rejections: int = 0
+    area_lower_bound_rejections: int = 0
     overlap_rejections: int = 0
     final_rejections: int = 0
     direct_mapping_attempts: int = 0
@@ -60,11 +64,15 @@ class SearchStats:
     budget_reason: str | None = None
     elapsed_seconds: float = 0.0
     best_effort_updates: int = 0
+    oriented_bounds_calculations: int = 0
+    edge_match_cache_hits: int = 0
+    edge_match_cache_misses: int = 0
 
 
 @dataclass(frozen=True)
 class _Candidate:
     score: float
+    match_priority: int
     open_edge: OpenEdge
     piece: Piece
     edge: Edge
@@ -393,6 +401,10 @@ class PuzzleSolver:
         self._best_effort_reason: str | None = None
         self._expanded_length_search = False
         self._search_started_at = 0.0
+        self._edge_match_cache: dict[
+            tuple[bool, float, float],
+            tuple[bool, bool, bool],
+        ] = {}
 
     def solve(self, pieces: Sequence[Piece] | Iterable[Piece]) -> Solution:
         """Search all edge-derived rigid poses using DFS and backtracking."""
@@ -410,6 +422,7 @@ class PuzzleSolver:
         self._best_effort_reason = None
         self._expanded_length_search = False
         self._search_started_at = time.perf_counter()
+        self._edge_match_cache.clear()
 
         input_error = self._validate_input(piece_list)
         if input_error is not None:
@@ -423,10 +436,13 @@ class PuzzleSolver:
         min_x, min_y, _, _ = base_piece.bounds
         base_transform = RigidTransform(0.0, (-min_x, -min_y))
         placed_base = PlacedPiece.from_piece(base_piece, base_transform)
+        initial_bounds = oriented_bounds_from_points(placed_base.vertices)
+        self.stats.oriented_bounds_calculations += 1
         initial_state = SolverState(
             placed_pieces=[placed_base],
             used_piece_ids={base_piece.id},
             open_edges=list(placed_base.edges),
+            oriented_bounds=initial_bounds,
         )
         self._log(
             f"[BASE] piece={base_piece.id} area={base_piece.area:.3f} "
@@ -519,13 +535,11 @@ class PuzzleSolver:
     ) -> None:
         """Keep the most rectangle-like complete state as a timed fallback."""
 
-        points = [
-            point.as_tuple()
-            for placed in state.placed_pieces
-            for point in placed.vertices
-        ]
-        hull = MultiPoint(points).convex_hull
-        short_side, long_side, rectangle = rectangle_dimensions(hull)
+        short_side = validation.short_side_mm
+        long_side = validation.long_side_mm
+        rectangle = validation.rectangle
+        if short_side is None or long_side is None or rectangle is None:
+            return
         if short_side <= 0.0 or long_side <= 0.0:
             return
 
@@ -763,11 +777,64 @@ class PuzzleSolver:
                 continue
             self._log(f"[CHECK] vertex_distance=PASS error={vertex_error:.3f}")
 
-            if not check_bbox(state.placed_pieces, placed, self.config):
+            if state.oriented_bounds is None:
+                candidate_bounds = oriented_bounds_from_points(
+                    point
+                    for existing in (*state.placed_pieces, placed)
+                    for point in existing.vertices
+                )
+            else:
+                candidate_bounds = extend_oriented_bounds(
+                    state.oriented_bounds,
+                    placed.vertices,
+                )
+            self.stats.oriented_bounds_calculations += 1
+            if not check_oriented_bounds(candidate_bounds, self.config):
                 self.stats.bbox_rejections += 1
                 self._log("[CHECK] bbox=FAIL")
                 continue
             self._log("[CHECK] bbox=PASS")
+
+            if not check_area_lower_bound(
+                candidate_bounds,
+                self._total_piece_area,
+                self.config,
+            ):
+                self.stats.area_lower_bound_rejections += 1
+                self._log("[CHECK] area_lower_bound=FAIL")
+                if (
+                    self.config.return_best_effort_on_failure
+                    and len(state.used_piece_ids) + 1 == self._total_piece_count
+                ):
+                    overlap_valid, overlap_area = check_overlap(
+                        state.placed_pieces,
+                        placed,
+                        self.config.overlap_tolerance_mm2,
+                    )
+                    if overlap_valid:
+                        child = self._add_piece(
+                            state,
+                            placed,
+                            candidate,
+                            candidate_bounds,
+                        )
+                        self._consider_best_effort(
+                            child,
+                            FinalValidation(
+                                False,
+                                "assembled area cannot fill its rectangle",
+                                short_side_mm=candidate_bounds.short_side_mm,
+                                long_side_mm=candidate_bounds.long_side_mm,
+                                rectangle=candidate_bounds.rectangle,
+                            ),
+                        )
+                    else:
+                        self.stats.overlap_rejections += 1
+                        self._log(
+                            f"[CHECK] overlap=FAIL area={overlap_area:.3f}"
+                        )
+                continue
+            self._log("[CHECK] area_lower_bound=PASS")
 
             overlap_valid, overlap_area = check_overlap(
                 state.placed_pieces,
@@ -780,7 +847,12 @@ class PuzzleSolver:
                 continue
             self._log(f"[CHECK] overlap=PASS area={overlap_area:.3f}")
 
-            child = self._add_piece(state, placed, candidate)
+            child = self._add_piece(
+                state,
+                placed,
+                candidate,
+                candidate_bounds,
+            )
             self.stats.placements += 1
             result = self._dfs(child)
             if result is not None:
@@ -804,42 +876,11 @@ class PuzzleSolver:
                 for edge in piece.edges:
                     if self._budget_exceeded():
                         return candidates
-                    length_matches = check_length_match(
-                        open_edge.length,
-                        edge.length,
-                        self.config.length_tolerance_mm,
-                    )
-                    length_difference = abs(open_edge.length - edge.length)
-                    former_partial_threshold = max(
-                        0.0,
-                        self.config.partial_min_residual_mm
-                        - self.config.length_tolerance_mm,
-                    )
-                    strict_partial_match = (
-                        self.config.allow_partial_edge_matches
-                        and self._expanded_length_search
-                        and not length_matches
-                        and length_difference >= former_partial_threshold
-                        and min(open_edge.length, edge.length)
-                        >= self.config.min_connection_length_mm
-                    )
-                    approximate_match = (
-                        self._expanded_length_search
-                        and not length_matches
-                        and not strict_partial_match
-                        and length_difference
-                        <= self.config.approximate_full_match_tolerance_mm
-                    )
-                    expanded_partial_match = (
-                        self.config.allow_partial_edge_matches
-                        and self._expanded_length_search
-                        and not length_matches
-                        and not approximate_match
-                        and not strict_partial_match
-                        and min(open_edge.length, edge.length)
-                        >= self.config.min_connection_length_mm
-                    )
-                    partial_match = strict_partial_match or expanded_partial_match
+                    (
+                        length_matches,
+                        approximate_match,
+                        partial_match,
+                    ) = self._classify_edge_match(open_edge.length, edge.length)
                     if not length_matches and not approximate_match and not partial_match:
                         self.stats.length_rejections += 1
                         continue
@@ -909,6 +950,11 @@ class PuzzleSolver:
                         candidates.append(
                             _Candidate(
                                 score,
+                                (
+                                    0
+                                    if length_matches
+                                    else 1 if approximate_match else 2
+                                ),
                                 open_edge,
                                 piece,
                                 edge,
@@ -924,6 +970,7 @@ class PuzzleSolver:
                             self.stats.expanded_candidates += 1
         candidates.sort(
             key=lambda candidate: (
+                candidate.match_priority,
                 candidate.score,
                 candidate.piece.id,
                 candidate.edge.edge_id,
@@ -932,6 +979,67 @@ class PuzzleSolver:
             )
         )
         return candidates
+
+    def _classify_edge_match(
+        self,
+        open_length: float,
+        candidate_length: float,
+    ) -> tuple[bool, bool, bool]:
+        """Classify a length pair once and reuse it across equivalent states."""
+
+        cache_key = (
+            self._expanded_length_search,
+            open_length,
+            candidate_length,
+        )
+        cached = self._edge_match_cache.get(cache_key)
+        if cached is not None:
+            self.stats.edge_match_cache_hits += 1
+            return cached
+
+        self.stats.edge_match_cache_misses += 1
+        length_matches = check_length_match(
+            open_length,
+            candidate_length,
+            self.config.length_tolerance_mm,
+        )
+        length_difference = abs(open_length - candidate_length)
+        former_partial_threshold = max(
+            0.0,
+            self.config.partial_min_residual_mm
+            - self.config.length_tolerance_mm,
+        )
+        strict_partial_match = (
+            self.config.allow_partial_edge_matches
+            and self._expanded_length_search
+            and not length_matches
+            and length_difference >= former_partial_threshold
+            and min(open_length, candidate_length)
+            >= self.config.min_connection_length_mm
+        )
+        approximate_match = (
+            self._expanded_length_search
+            and not length_matches
+            and not strict_partial_match
+            and length_difference
+            <= self.config.approximate_full_match_tolerance_mm
+        )
+        expanded_partial_match = (
+            self.config.allow_partial_edge_matches
+            and self._expanded_length_search
+            and not length_matches
+            and not approximate_match
+            and not strict_partial_match
+            and min(open_length, candidate_length)
+            >= self.config.min_connection_length_mm
+        )
+        result = (
+            length_matches,
+            approximate_match,
+            strict_partial_match or expanded_partial_match,
+        )
+        self._edge_match_cache[cache_key] = result
+        return result
 
     def _candidate_score(
         self,
@@ -991,12 +1099,14 @@ class PuzzleSolver:
         state: SolverState,
         placed: PlacedPiece,
         candidate: _Candidate,
+        oriented_bounds: OrientedBounds,
     ) -> SolverState:
         """Create a child state; the parent remains untouched for backtracking."""
 
         child = state.copy()
         child.placed_pieces.append(placed)
         child.used_piece_ids.add(placed.piece_id)
+        child.oriented_bounds = oriented_bounds
         removed = False
         retained_edges: list[OpenEdge] = []
         for edge in child.open_edges:

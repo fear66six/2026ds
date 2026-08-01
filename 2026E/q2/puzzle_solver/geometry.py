@@ -7,7 +7,7 @@ import math
 from typing import Iterable, Sequence
 
 import numpy as np
-from shapely.geometry import LineString, Polygon
+from shapely.geometry import LineString, MultiPoint, Polygon
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,6 +42,16 @@ class RigidTransform:
         x = cos_angle * point.x - sin_angle * point.y + self.translation[0]
         y = sin_angle * point.x + cos_angle * point.y + self.translation[1]
         return Point(x, y)
+
+
+@dataclass(frozen=True)
+class OrientedBounds:
+    """Cached convex hull and minimum-area bounding rectangle for a state."""
+
+    convex_hull: Polygon
+    rectangle: Polygon
+    short_side_mm: float
+    long_side_mm: float
 
 
 def as_point(value: Point | Sequence[float]) -> Point:
@@ -139,3 +149,28 @@ def rectangle_dimensions(polygon: Polygon) -> tuple[float, float, Polygon]:
     ]
     return (min(lengths), max(lengths), rectangle)
 
+
+def oriented_bounds_from_points(points: Iterable[Point]) -> OrientedBounds:
+    """Build reusable oriented bounds from assembly vertices."""
+
+    coordinates = [point.as_tuple() for point in points]
+    hull = MultiPoint(coordinates).convex_hull
+    if not isinstance(hull, Polygon):
+        raise ValueError("oriented bounds require non-degenerate polygon points")
+    short_side, long_side, rectangle = rectangle_dimensions(hull)
+    return OrientedBounds(hull, rectangle, short_side, long_side)
+
+
+def extend_oriented_bounds(
+    current: OrientedBounds,
+    points: Iterable[Point],
+) -> OrientedBounds:
+    """Extend cached bounds with a new rigid piece without revisiting old vertices."""
+
+    coordinates = list(current.convex_hull.exterior.coords)[:-1]
+    coordinates.extend(point.as_tuple() for point in points)
+    hull = MultiPoint(coordinates).convex_hull
+    if not isinstance(hull, Polygon):
+        raise ValueError("oriented bounds require non-degenerate polygon points")
+    short_side, long_side, rectangle = rectangle_dimensions(hull)
+    return OrientedBounds(hull, rectangle, short_side, long_side)

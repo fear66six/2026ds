@@ -7,11 +7,17 @@ import math
 from typing import Sequence
 
 from shapely import set_precision
-from shapely.geometry import LineString, MultiPoint, Polygon
+from shapely.geometry import LineString, Polygon
 from shapely.ops import unary_union
 
 from .config import SolverConfig
-from .geometry import Point, cross, polygon_corner_angles_deg, rectangle_dimensions
+from .geometry import (
+    OrientedBounds,
+    Point,
+    cross,
+    oriented_bounds_from_points,
+    polygon_corner_angles_deg,
+)
 from .models import OpenEdge, PlacedPiece, SolverState
 
 
@@ -124,18 +130,56 @@ def check_bbox(
 ) -> bool:
     """Prune assemblies whose oriented extent already exceeds target maxima."""
 
-    coordinates: list[tuple[float, float]] = []
-    for placed in (*placed_pieces, candidate):
-        coordinates.extend(point.as_tuple() for point in placed.vertices)
-    hull = MultiPoint(coordinates).convex_hull
-    short_side, long_side, _ = rectangle_dimensions(hull)
+    bounds = oriented_bounds_from_points(
+        point
+        for placed in (*placed_pieces, candidate)
+        for point in placed.vertices
+    )
+    return check_oriented_bounds(bounds, config)
+
+
+def check_oriented_bounds(bounds: OrientedBounds, config: SolverConfig) -> bool:
+    """Check already-computed oriented bounds against target maxima."""
+
     tolerance = max(config.length_tolerance_mm, config.bbox_tolerance_mm) + (
         config.geometry_tolerance_mm
     )
     return (
-        short_side <= config.max_short_side_mm + tolerance
-        and long_side <= config.max_long_side_mm + tolerance
+        bounds.short_side_mm <= config.max_short_side_mm + tolerance
+        and bounds.long_side_mm <= config.max_long_side_mm + tolerance
     )
+
+
+def check_area_lower_bound(
+    bounds: OrientedBounds,
+    total_piece_area_mm2: float,
+    config: SolverConfig,
+) -> bool:
+    """Reject a state only when no remaining placement can fill its rectangle.
+
+    Adding pieces cannot reduce the minimum-area enclosing rectangle.  The
+    final union cannot have more area than the sum of all rigid pieces, so a
+    current rectangle whose unavoidable gap already exceeds a final gap
+    tolerance can never become valid.
+    """
+
+    rectangle_area = float(bounds.rectangle.area)
+    minimum_gap_area = max(0.0, rectangle_area - total_piece_area_mm2)
+    epsilon = config.geometry_tolerance_mm
+    if minimum_gap_area > config.area_tolerance_mm2 + epsilon:
+        return False
+    if (
+        config.max_final_gap_area_mm2 is not None
+        and minimum_gap_area > config.max_final_gap_area_mm2 + epsilon
+    ):
+        return False
+    if config.max_final_gap_ratio is not None and rectangle_area > 1e-9:
+        if (
+            minimum_gap_area / rectangle_area
+            > config.max_final_gap_ratio + epsilon
+        ):
+            return False
+    return True
 
 
 def _edge_on_rectangle_boundary(
@@ -179,44 +223,55 @@ def check_final_rectangle(state: SolverState, config: SolverConfig) -> FinalVali
     # Most terminal DFS states fail on dimensions or gross fill.  Both can be
     # rejected from vertices and source areas before constructing an expensive
     # Shapely union.  The later checks still revalidate exact union geometry.
-    all_points = [
-        point.as_tuple()
+    bounds = state.oriented_bounds or oriented_bounds_from_points(
+        point
         for placed in state.placed_pieces
         for point in placed.vertices
-    ]
-    hull = MultiPoint(all_points).convex_hull
-    short_side, long_side, rectangle = rectangle_dimensions(hull)
+    )
+    short_side = bounds.short_side_mm
+    long_side = bounds.long_side_mm
+    rectangle = bounds.rectangle
+
+    def failure(reason: str) -> FinalValidation:
+        return FinalValidation(
+            False,
+            reason,
+            short_side_mm=short_side,
+            long_side_mm=long_side,
+            rectangle=rectangle,
+        )
+
     if short_side <= 0 or long_side <= 0:
-        return FinalValidation(False, "minimum rotated rectangle is degenerate")
+        return failure("minimum rotated rectangle is degenerate")
     dimension_tolerance = config.rectangle_dimension_tolerance_mm
     if not (
         config.min_short_side_mm - dimension_tolerance
         <= short_side
         <= config.max_short_side_mm + dimension_tolerance
     ):
-        return FinalValidation(False, "rectangle short side is outside the allowed range")
+        return failure("rectangle short side is outside the allowed range")
     if not (
         config.min_long_side_mm - dimension_tolerance
         <= long_side
         <= config.max_long_side_mm + dimension_tolerance
     ):
-        return FinalValidation(False, "rectangle long side is outside the allowed range")
+        return failure("rectangle long side is outside the allowed range")
 
     raw_sum_piece_area = sum(placed.polygon.area for placed in state.placed_pieces)
     minimum_gap_area = max(0.0, float(rectangle.area - raw_sum_piece_area))
     minimum_gap_ratio = minimum_gap_area / max(float(rectangle.area), 1e-9)
     if minimum_gap_area > config.area_tolerance_mm2:
-        return FinalValidation(False, "assembled area does not fill its rectangle")
+        return failure("assembled area does not fill its rectangle")
     if (
         config.max_final_gap_ratio is not None
         and minimum_gap_ratio > config.max_final_gap_ratio
     ):
-        return FinalValidation(False, "assembled rectangle gap ratio is too large")
+        return failure("assembled rectangle gap ratio is too large")
     if (
         config.max_final_gap_area_mm2 is not None
         and minimum_gap_area > config.max_final_gap_area_mm2
     ):
-        return FinalValidation(False, "assembled rectangle gap area is too large")
+        return failure("assembled rectangle gap area is too large")
 
     # Independently rotated matching edges can differ by about 1e-14 mm.
     # Precision snapping prevents such invisible gaps from becoming a false
@@ -227,36 +282,36 @@ def check_final_rectangle(state: SolverState, config: SolverConfig) -> FinalVali
     ]
     final_union = unary_union(polygons)
     if final_union.geom_type != "Polygon":
-        return FinalValidation(False, "assembled pieces are not one connected polygon")
+        return failure("assembled pieces are not one connected polygon")
     if not final_union.is_valid:
-        return FinalValidation(False, "assembled polygon is invalid")
+        return failure("assembled polygon is invalid")
 
     sum_piece_area = sum(polygon.area for polygon in polygons)
     overlap_area = sum_piece_area - final_union.area
     allowed_overlap = config.overlap_tolerance_mm2 * max(1, len(polygons) - 1)
     if overlap_area > allowed_overlap + config.geometry_tolerance_mm:
-        return FinalValidation(False, "piece area and union area indicate overlap")
+        return failure("piece area and union area indicate overlap")
 
     if len(final_union.interiors) > 0:
         hole_area = sum(Polygon(interior).area for interior in final_union.interiors)
         if hole_area > config.area_tolerance_mm2:
-            return FinalValidation(False, "assembled polygon has an internal hole")
+            return failure("assembled polygon has an internal hole")
 
     area_error = abs(float(rectangle.area - final_union.area))
     if area_error > config.area_tolerance_mm2:
-        return FinalValidation(False, "assembled area does not fill its rectangle")
+        return failure("assembled area does not fill its rectangle")
     rectangle_gap_area = max(0.0, float(rectangle.area - final_union.area))
     rectangle_gap_ratio = rectangle_gap_area / max(float(rectangle.area), 1e-9)
     if (
         config.max_final_gap_ratio is not None
         and rectangle_gap_ratio > config.max_final_gap_ratio
     ):
-        return FinalValidation(False, "assembled rectangle gap ratio is too large")
+        return failure("assembled rectangle gap ratio is too large")
     if (
         config.max_final_gap_area_mm2 is not None
         and rectangle_gap_area > config.max_final_gap_area_mm2
     ):
-        return FinalValidation(False, "assembled rectangle gap area is too large")
+        return failure("assembled rectangle gap area is too large")
 
     # Area alone accepts a narrow but deep missing corner.  This one-way
     # coverage check requires the fitted rectangle frame to be supported by
@@ -272,6 +327,9 @@ def check_final_rectangle(state: SolverState, config: SolverConfig) -> FinalVali
                 False,
                 "rectangle boundary has an unsupported segment "
                 f"({uncovered.length:.3f} mm outside tolerance)",
+                short_side_mm=short_side,
+                long_side_mm=long_side,
+                rectangle=rectangle,
             )
 
     simplified = final_union.simplify(
@@ -281,11 +339,11 @@ def check_final_rectangle(state: SolverState, config: SolverConfig) -> FinalVali
     corners = list(simplified.exterior.coords)[:-1]
     if len(corners) != 4:
         if not config.allow_fitted_rectangle:
-            return FinalValidation(False, "outer boundary is not close to four-sided")
+            return failure("outer boundary is not close to four-sided")
     else:
         corner_angles = polygon_corner_angles_deg(simplified)
         if any(abs(angle - 90.0) > config.angle_tolerance_deg for angle in corner_angles):
-            return FinalValidation(False, "outer boundary has a non-right corner")
+            return failure("outer boundary has a non-right corner")
 
         vectors = [
             (
@@ -298,14 +356,14 @@ def check_final_rectangle(state: SolverState, config: SolverConfig) -> FinalVali
             _parallel_angle_error_deg(vectors[0], vectors[2]) > config.angle_tolerance_deg
             or _parallel_angle_error_deg(vectors[1], vectors[3]) > config.angle_tolerance_deg
         ):
-            return FinalValidation(False, "opposite outer edges are not parallel")
+            return failure("opposite outer edges are not parallel")
 
     if not check_outer_edges(
         state.placed_pieces,
         rectangle,
         config.outer_edge_tolerance_mm,
     ):
-        return FinalValidation(False, "at least one piece has no outer rectangle edge")
+        return failure("at least one piece has no outer rectangle edge")
 
     dimension_midpoint_error = abs(
         short_side - (config.min_short_side_mm + config.max_short_side_mm) / 2.0
