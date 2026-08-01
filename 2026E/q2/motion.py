@@ -121,14 +121,11 @@ def _build_move(
 
     if config.pick_height is None or config.release_height is None:
         raise RuntimeError("CALIBRATION_REQUIRED: missing pick/release height")
-    wrist = mapper.map_in_plane_rotation(rotation_delta_deg)
-    pick_roll_deg = float(wrist.pick_roll_deg)
-    geometric_release_roll_deg = float(wrist.release_roll_deg)
     source_robot = mapper.paper_to_robot(
         source.x_mm,
         source.y_mm,
         float(config.pick_height),
-        roll_deg=pick_roll_deg,
+        roll_deg=0.0,
     )
     source_robot.x += float(config.pick_robot_xy_offset_mm[0])
     source_robot.y += float(config.pick_robot_xy_offset_mm[1])
@@ -136,7 +133,7 @@ def _build_move(
         target.x_mm,
         target.y_mm,
         float(config.release_height),
-        roll_deg=geometric_release_roll_deg,
+        roll_deg=0.0,
     )
 
     swing_azimuth_deg = smaller_azimuth_angle_deg(
@@ -152,9 +149,48 @@ def _build_move(
             (target_robot.x, target_robot.y),
             sign=float(config.swing_roll_sign),
         )
-    release_roll_deg = normalize_angle_deg(
-        geometric_release_roll_deg + swing_compensation_deg
-    )
+    if not mapper.wrist_mapping_ready():
+        raise RuntimeError(
+            "CALIBRATION_REQUIRED: missing wrist roll zero/sign calibration"
+        )
+    signed_motion_deg = float(mapper.wrist_roll_sign) * rotation_delta_deg
+    motion_candidates = [signed_motion_deg]
+    if abs(signed_motion_deg) > 1e-9:
+        motion_candidates.append(
+            signed_motion_deg - np.copysign(360.0, signed_motion_deg)
+        )
+    roll_candidates: list[tuple[float, float, float, float]] = []
+    for motion_deg in motion_candidates:
+        commanded_motion_deg = motion_deg + swing_compensation_deg
+        if abs(commanded_motion_deg) <= 1e-9:
+            candidate_pick_roll = float(mapper.wrist_roll_zero_deg)
+        else:
+            candidate_pick_roll = -90.0 if commanded_motion_deg > 0.0 else 90.0
+        candidate_geometric_release = candidate_pick_roll + motion_deg
+        candidate_release = candidate_geometric_release + swing_compensation_deg
+        if -90.0 <= candidate_release <= 90.0:
+            roll_candidates.append(
+                (
+                    abs(commanded_motion_deg),
+                    candidate_pick_roll,
+                    candidate_geometric_release,
+                    candidate_release,
+                )
+            )
+    if not roll_candidates:
+        raise RuntimeError(
+            "Q2_PLAN_ROLL_OUT_OF_RANGE: no equivalent wrist rotation stays "
+            "inside [-90, 90] after swing compensation; "
+            f"piece={piece_id}, rotation_delta_deg={rotation_delta_deg:.3f}, "
+            f"swing_compensation_deg={swing_compensation_deg:.3f}"
+        )
+    (
+        _,
+        pick_roll_deg,
+        geometric_release_roll_deg,
+        release_roll_deg,
+    ) = min(roll_candidates, key=lambda candidate: candidate[0])
+    source_robot.roll = pick_roll_deg
     target_robot.roll = release_roll_deg
     source_robot.duration_ms = int(config.transfer_descend_duration_ms)
     target_robot.duration_ms = int(config.transfer_descend_duration_ms)
@@ -259,4 +295,3 @@ def plan_white_puzzle_moves(
             )
         )
     return moves
-
