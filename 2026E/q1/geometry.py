@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Hashable, Mapping, Tuple
+from typing import Hashable, Iterable, Mapping, Tuple
 
 import cv2
 import numpy as np
@@ -15,6 +15,9 @@ def apply_uniform_shared_edge_gap(
     vertices_by_id: Mapping[Hashable, np.ndarray],
     gap_mm: float,
     *,
+    shared_edge_pairs: Iterable[
+        tuple[Hashable, int, Hashable, int]
+    ] | None = None,
     collinear_tolerance_mm: float = 0.5,
     minimum_shared_length_mm: float = 2.0,
 ) -> dict[Hashable, np.ndarray]:
@@ -28,62 +31,123 @@ def apply_uniform_shared_edge_gap(
         return polygons
 
     piece_ids = list(polygons)
+    piece_index_by_id = {
+        piece_id: index for index, piece_id in enumerate(piece_ids)
+    }
     constraints: list[tuple[int, int, np.ndarray, float]] = []
-    for first_index, first_id in enumerate(piece_ids):
-        first = polygons[first_id]
-        first_center = first.mean(axis=0)
-        for second_index in range(first_index + 1, len(piece_ids)):
-            second = polygons[piece_ids[second_index]]
+    if shared_edge_pairs is not None:
+        seen_pairs: set[tuple[Hashable, int, Hashable, int]] = set()
+        for first_id, first_edge_id, second_id, second_edge_id in shared_edge_pairs:
+            if first_id not in polygons or second_id not in polygons:
+                continue
+            canonical = (first_id, first_edge_id, second_id, second_edge_id)
+            reverse = (second_id, second_edge_id, first_id, first_edge_id)
+            if canonical in seen_pairs or reverse in seen_pairs:
+                continue
+            seen_pairs.add(canonical)
+            first = polygons[first_id]
+            second = polygons[second_id]
+            if not (0 <= first_edge_id < len(first)) or not (
+                0 <= second_edge_id < len(second)
+            ):
+                continue
+            first_start = first[first_edge_id]
+            first_end = first[(first_edge_id + 1) % len(first)]
+            second_start = second[second_edge_id]
+            second_end = second[(second_edge_id + 1) % len(second)]
+            first_tangent = first_end - first_start
+            second_tangent = second_end - second_start
+            first_length = float(np.linalg.norm(first_tangent))
+            second_length = float(np.linalg.norm(second_tangent))
+            if first_length <= 1e-9 or second_length <= 1e-9:
+                continue
+            first_tangent /= first_length
+            second_tangent /= second_length
+            if np.dot(first_tangent, second_tangent) < 0.0:
+                second_tangent = -second_tangent
+            tangent = first_tangent + second_tangent
+            tangent_length = float(np.linalg.norm(tangent))
+            tangent = (
+                first_tangent if tangent_length <= 1e-9 else tangent / tangent_length
+            )
+            normal = np.array([-tangent[1], tangent[0]], dtype=np.float64)
+            first_center = first.mean(axis=0)
             second_center = second.mean(axis=0)
-            best: tuple[float, np.ndarray, float] | None = None
-            for edge_index in range(len(first)):
-                start = first[edge_index]
-                end = first[(edge_index + 1) % len(first)]
-                edge = end - start
-                edge_length = float(np.linalg.norm(edge))
-                if edge_length <= 1e-9:
-                    continue
-                tangent = edge / edge_length
-                for other_index in range(len(second)):
-                    other_start = second[other_index]
-                    other_end = second[(other_index + 1) % len(second)]
-                    distances = (
-                        abs(
-                            tangent[0] * (other_start[1] - start[1])
-                            - tangent[1] * (other_start[0] - start[0])
-                        ),
-                        abs(
-                            tangent[0] * (other_end[1] - start[1])
-                            - tangent[1] * (other_end[0] - start[0])
-                        ),
-                    )
-                    if max(distances) > float(collinear_tolerance_mm):
-                        continue
-                    other_projection = sorted(
-                        (
-                            float(np.dot(other_start - start, tangent)),
-                            float(np.dot(other_end - start, tangent)),
-                        )
-                    )
-                    overlap = min(edge_length, other_projection[1]) - max(
-                        0.0, other_projection[0]
-                    )
-                    if overlap < float(minimum_shared_length_mm):
-                        continue
-                    normal = np.array([-tangent[1], tangent[0]], dtype=np.float64)
-                    if np.dot(second_center - first_center, normal) < 0.0:
-                        normal = -normal
-                    existing_separation = float(
-                        np.dot(other_start - start, normal)
-                    )
-                    candidate = (overlap, normal, existing_separation)
-                    if best is None or candidate[0] > best[0]:
-                        best = candidate
-            if best is not None:
-                constraints.append(
-                    (first_index, second_index, best[1], best[2])
+            if np.dot(second_center - first_center, normal) < 0.0:
+                normal = -normal
+            first_midpoint = 0.5 * (first_start + first_end)
+            second_midpoint = 0.5 * (second_start + second_end)
+            existing_separation = float(
+                np.dot(second_midpoint - first_midpoint, normal)
+            )
+            constraints.append(
+                (
+                    piece_index_by_id[first_id],
+                    piece_index_by_id[second_id],
+                    normal,
+                    existing_separation,
                 )
+            )
+    else:
+        for first_index, first_id in enumerate(piece_ids):
+            first = polygons[first_id]
+            first_center = first.mean(axis=0)
+            for second_index in range(first_index + 1, len(piece_ids)):
+                second = polygons[piece_ids[second_index]]
+                second_center = second.mean(axis=0)
+                best: tuple[float, np.ndarray, float] | None = None
+                for edge_index in range(len(first)):
+                    start = first[edge_index]
+                    end = first[(edge_index + 1) % len(first)]
+                    edge = end - start
+                    edge_length = float(np.linalg.norm(edge))
+                    if edge_length <= 1e-9:
+                        continue
+                    tangent = edge / edge_length
+                    for other_index in range(len(second)):
+                        other_start = second[other_index]
+                        other_end = second[(other_index + 1) % len(second)]
+                        distances = (
+                            abs(
+                                tangent[0] * (other_start[1] - start[1])
+                                - tangent[1] * (other_start[0] - start[0])
+                            ),
+                            abs(
+                                tangent[0] * (other_end[1] - start[1])
+                                - tangent[1] * (other_end[0] - start[0])
+                            ),
+                        )
+                        if max(distances) > float(collinear_tolerance_mm):
+                            continue
+                        other_projection = sorted(
+                            (
+                                float(np.dot(other_start - start, tangent)),
+                                float(np.dot(other_end - start, tangent)),
+                            )
+                        )
+                        overlap = min(edge_length, other_projection[1]) - max(
+                            0.0, other_projection[0]
+                        )
+                        if overlap < float(minimum_shared_length_mm):
+                            continue
+                        normal = np.array(
+                            [-tangent[1], tangent[0]], dtype=np.float64
+                        )
+                        if np.dot(second_center - first_center, normal) < 0.0:
+                            normal = -normal
+                        existing_separation = float(
+                            np.dot(other_start - start, normal)
+                        )
+                        candidate = (overlap, normal, existing_separation)
+                        if best is None or candidate[0] > best[0]:
+                            best = candidate
+                if best is not None:
+                    constraints.append(
+                        (first_index, second_index, best[1], best[2])
+                    )
 
+    if not constraints and shared_edge_pairs is not None:
+        raise ValueError("EDGE_GAP_SHARED_EDGES_MISSING")
     if not constraints:
         return polygons
 

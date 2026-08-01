@@ -295,6 +295,16 @@ def plan_card_moves(
         target_vertices_by_id = apply_uniform_shared_edge_gap(
             target_vertices_by_id,
             config.edge_gap_mm,
+            shared_edge_pairs=(
+                (
+                    seam.first_piece_id,
+                    seam.first_edge_id,
+                    seam.second_piece_id,
+                    seam.second_edge_id,
+                )
+                for seam in solution.seams
+                if seam.first_piece_id >= 0 and seam.second_piece_id >= 0
+            ),
         )
 
     confidence = float(solution.pattern_confidence or 0.0)

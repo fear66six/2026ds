@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=2026E 拼图可视化
+Comment=Touch launcher for Q1/Q2/Q3 plan preview and run
+Exec=/home/jetson/2026E/tools/jetson_launch_visualization.sh
+Path=/home/jetson/2026E
+Icon=applications-graphics
+Terminal=false
+Categories=Utility;Science;
+StartupNotify=true
