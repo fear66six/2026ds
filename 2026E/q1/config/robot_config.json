@@ -1,4 +1,5 @@
 {
+  "edge_gap_enabled": true,
   "schema_version": 1,
   "nexarm_port": "/dev/serial/by-id/usb-1a86_USB_Serial-if00-port0",
   "camera_port": "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5B7A028646-if00",
@@ -36,7 +37,7 @@
   "stable_samples": 3,
   "vertex_max_error_mm": 8.0,
   "target_scale": 1.03,
-  "edge_gap_mm": 2.0,
+  "edge_gap_mm": 5.0,
   "target_origin_mm": [53.5, 191.85],
   "magnet_settle_ms": 200,
   "magnet_release_settle_ms": 200,
@@ -55,7 +56,7 @@
     "transfer": "The Q1 executor follows pintu/jetson_to_nexarm/puzzle_runner.py: pick-ready at pick Z+40, descend, magnet on, lift at the pick XY to Z=120, rotate to the compensated release roll at Z=120, transit at Z=120, place-ready at release Z+40, descend, magnet off, and lift at the release XY to Z=120. Base move/descend/lift/rotate durations are 1500/800/800/1200 ms; rotate duration scales with the normalized roll delta and is skipped below 1 degree.",
     "magnet": "STM32 USART1 application uses 115200 8N1 commands and a 50..500 ms timed MAGNET_ON lease. The by-id path ending 5B7A030191 is user-provided deployment data and must be rechecked on Jetson. Production sequence is pick-duration-plus-settle -> MAGNET_ON/status-confirm -> release-duration-plus-settle -> MAGNET_OFF/status-confirm. physical_pick_verified remains false until post-move visual evidence.",
     "motion": "The first controller write after opening is the direct HOME set_pose command; Q1 does not send CMD_SET_GLOBAL_ACC. Current Cartesian and joint feedback have both failed to provide a usable production arrival signal on this arm. The sequence therefore uses each controller duration followed by a 200 ms mechanical settle before continuing, matching the active pintu executor timing. No feedback wait or movement timeout can block camera initialization or the move queue. K230 initialization performs protocol handshakes without a discarded warmup capture; the next and only capture is the image used for scene analysis and planning.",
-    "target_geometry": "The official Figure 2 template remains 100x60 mm. Run 20260731_012300_357937 measured the four fixed source polygons at 6375.18 mm2 versus the nominal 6000 mm2, giving a 1.0308 linear ratio. Q1 uses target_scale=1.03 for this physical four-piece set. The scaled 103x61.8 mm target is centered in the A4 lower/right half with origin [53.5,191.85] mm; edge_gap_mm=2 moves each target piece 1 mm radially outward from the rectangle center."
+    "target_geometry": "The official Figure 2 template remains 100x60 mm. Run 20260731_012300_357937 measured the four fixed source polygons at 6375.18 mm2 versus the nominal 6000 mm2, giving a 1.0308 linear ratio. Q1 uses target_scale=1.03 for this physical four-piece set. edge_gap_enabled=true applies edge_gap_mm=5 as rigid per-piece translations that make all five adjacent-edge normal gaps 5 mm; edge_gap_enabled=false keeps the original target template with no added gap. The target remains centered at paper [105,222.75] mm. Planned corresponding-vertex distances with the gap enabled are at most 10.69 mm, below the official 20 mm limit."
   },
   "_note": "Single active source for NexArm, camera and STM32 magnet endpoints, arm calibration, HOME, motion and planning parameters. Production Q1 is STM32-only; real energization still requires --confirm RUN_Q1. The main sequence uses controller duration plus a fixed mechanical settle before switching the magnet."
 }

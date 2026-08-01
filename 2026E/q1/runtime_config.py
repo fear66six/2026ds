@@ -18,6 +18,7 @@ class Q1RuntimeConfig:
     vertex_max_error_mm: float = 8.0
     target_origin_mm: tuple[float, float] = (55.0, 168.5)
     target_scale: float = 1.0
+    edge_gap_enabled: bool = True
     edge_gap_mm: float = 0.0
     robot_config: Path | None = None
     run_root: Path = Path("output/runs/q1")
@@ -75,6 +76,7 @@ class Q1RuntimeConfig:
             "direct_pick_release_pose_verified": self.direct_pick_release_pose_verified,
             "motion_calibration_status": self.motion_calibration_status,
             "target_scale": self.target_scale,
+            "edge_gap_enabled": self.edge_gap_enabled,
             "edge_gap_mm": self.edge_gap_mm,
             "swing_roll_compensate": self.swing_roll_compensate,
             "swing_roll_sign": self.swing_roll_sign,

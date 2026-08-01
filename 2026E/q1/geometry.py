@@ -3,12 +3,128 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Tuple
+from typing import Hashable, Mapping, Tuple
 
 import cv2
 import numpy as np
 
 Point = Tuple[float, float]
+
+
+def apply_uniform_shared_edge_gap(
+    vertices_by_id: Mapping[Hashable, np.ndarray],
+    gap_mm: float,
+    *,
+    collinear_tolerance_mm: float = 0.5,
+    minimum_shared_length_mm: float = 2.0,
+) -> dict[Hashable, np.ndarray]:
+    """Separate adjacent rigid polygons by a uniform normal gap."""
+
+    polygons = {
+        key: np.asarray(vertices, dtype=np.float64).reshape(-1, 2).copy()
+        for key, vertices in vertices_by_id.items()
+    }
+    if float(gap_mm) <= 0.0 or len(polygons) < 2:
+        return polygons
+
+    piece_ids = list(polygons)
+    constraints: list[tuple[int, int, np.ndarray, float]] = []
+    for first_index, first_id in enumerate(piece_ids):
+        first = polygons[first_id]
+        first_center = first.mean(axis=0)
+        for second_index in range(first_index + 1, len(piece_ids)):
+            second = polygons[piece_ids[second_index]]
+            second_center = second.mean(axis=0)
+            best: tuple[float, np.ndarray, float] | None = None
+            for edge_index in range(len(first)):
+                start = first[edge_index]
+                end = first[(edge_index + 1) % len(first)]
+                edge = end - start
+                edge_length = float(np.linalg.norm(edge))
+                if edge_length <= 1e-9:
+                    continue
+                tangent = edge / edge_length
+                for other_index in range(len(second)):
+                    other_start = second[other_index]
+                    other_end = second[(other_index + 1) % len(second)]
+                    distances = (
+                        abs(
+                            tangent[0] * (other_start[1] - start[1])
+                            - tangent[1] * (other_start[0] - start[0])
+                        ),
+                        abs(
+                            tangent[0] * (other_end[1] - start[1])
+                            - tangent[1] * (other_end[0] - start[0])
+                        ),
+                    )
+                    if max(distances) > float(collinear_tolerance_mm):
+                        continue
+                    other_projection = sorted(
+                        (
+                            float(np.dot(other_start - start, tangent)),
+                            float(np.dot(other_end - start, tangent)),
+                        )
+                    )
+                    overlap = min(edge_length, other_projection[1]) - max(
+                        0.0, other_projection[0]
+                    )
+                    if overlap < float(minimum_shared_length_mm):
+                        continue
+                    normal = np.array([-tangent[1], tangent[0]], dtype=np.float64)
+                    if np.dot(second_center - first_center, normal) < 0.0:
+                        normal = -normal
+                    existing_separation = float(
+                        np.dot(other_start - start, normal)
+                    )
+                    candidate = (overlap, normal, existing_separation)
+                    if best is None or candidate[0] > best[0]:
+                        best = candidate
+            if best is not None:
+                constraints.append(
+                    (first_index, second_index, best[1], best[2])
+                )
+
+    if not constraints:
+        return polygons
+
+    rows: list[np.ndarray] = []
+    distances: list[float] = []
+    for first_index, second_index, normal, existing_separation in constraints:
+        row = np.zeros(2 * len(piece_ids), dtype=np.float64)
+        row[2 * first_index : 2 * first_index + 2] = -normal
+        row[2 * second_index : 2 * second_index + 2] = normal
+        rows.append(row)
+        distances.append(float(gap_mm) - existing_separation)
+
+    for axis in range(2):
+        row = np.zeros(2 * len(piece_ids), dtype=np.float64)
+        row[axis::2] = 1.0
+        rows.append(row)
+        distances.append(0.0)
+
+    translations = np.linalg.lstsq(
+        np.asarray(rows),
+        np.asarray(distances),
+        rcond=None,
+    )[0].reshape(len(piece_ids), 2)
+    shifted = {
+        piece_id: polygons[piece_id] + translations[index]
+        for index, piece_id in enumerate(piece_ids)
+    }
+
+    original_points = np.vstack(list(polygons.values()))
+    shifted_points = np.vstack(list(shifted.values()))
+    original_center = 0.5 * (
+        original_points.min(axis=0) + original_points.max(axis=0)
+    )
+    shifted_center = 0.5 * (
+        shifted_points.min(axis=0) + shifted_points.max(axis=0)
+    )
+    center_delta = original_center - shifted_center
+    return {
+        piece_id: vertices + center_delta
+        for piece_id, vertices in shifted.items()
+    }
 
 
 @dataclass

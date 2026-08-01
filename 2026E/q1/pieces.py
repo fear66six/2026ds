@@ -184,20 +184,67 @@ def apply_edge_gap_mm(
             for key, value in vertices_by_id.items()
         }
 
+    template_ids = ("P1", "P2", "P3", "P4")
+    points_by_id = {
+        key: np.asarray(vertices_by_id[key], dtype=np.float64).reshape(-1, 2)
+        for key in template_ids
+    }
+    shared_edges = (
+        ("P1", "P2", 3, 2),
+        ("P1", "P4", 1, 2),
+        ("P2", "P3", 3, 2),
+        ("P2", "P4", 1, 2),
+        ("P3", "P4", 1, 2),
+    )
+    rows: list[np.ndarray] = []
+    distances: list[float] = []
+    for first_id, second_id, edge_start, edge_end in shared_edges:
+        first = points_by_id[first_id]
+        second = points_by_id[second_id]
+        tangent = first[edge_end] - first[edge_start]
+        tangent /= np.linalg.norm(tangent)
+        normal = np.array([-tangent[1], tangent[0]], dtype=np.float64)
+        if np.dot(second.mean(axis=0) - first.mean(axis=0), normal) < 0.0:
+            normal = -normal
+
+        row = np.zeros(2 * len(template_ids), dtype=np.float64)
+        first_index = template_ids.index(first_id)
+        second_index = template_ids.index(second_id)
+        row[2 * first_index : 2 * first_index + 2] = -normal
+        row[2 * second_index : 2 * second_index + 2] = normal
+        rows.append(row)
+        distances.append(float(gap_mm))
+
+    # Remove the global translation degree of freedom before recentering.
+    for axis in range(2):
+        row = np.zeros(2 * len(template_ids), dtype=np.float64)
+        row[axis::2] = 1.0
+        rows.append(row)
+        distances.append(0.0)
+
+    translations = np.linalg.lstsq(
+        np.asarray(rows),
+        np.asarray(distances),
+        rcond=None,
+    )[0].reshape(len(template_ids), 2)
+    shifted = {
+        template_id: points_by_id[template_id] + translations[index]
+        for index, template_id in enumerate(template_ids)
+    }
+
     origin = np.asarray(origin_mm, dtype=np.float64)
     target_center = origin + 0.5 * float(scale) * np.array(
         [TARGET_RECT_WIDTH_MM, TARGET_RECT_HEIGHT_MM], dtype=np.float64
     )
-    half_gap = float(gap_mm) * 0.5
-    shifted: dict[str, np.ndarray] = {}
-    for template_id, vertices in vertices_by_id.items():
-        points = np.asarray(vertices, dtype=np.float64).reshape(-1, 2).copy()
-        direction = points.mean(axis=0) - target_center
-        norm = float(np.linalg.norm(direction))
-        shifted[template_id] = (
-            points if norm < 1e-6 else points + direction * (half_gap / norm)
-        )
-    return shifted
+    all_points = np.vstack(list(shifted.values()))
+    layout_center = 0.5 * (
+        all_points.min(axis=0) + all_points.max(axis=0)
+    )
+    center_delta = target_center - layout_center
+    return {
+        template_id: points + center_delta
+        for template_id, points in shifted.items()
+    }
 
 
 def _point_on_segment(p: Point, a: Point, b: Point, tol: float = 0.05) -> bool:

@@ -46,13 +46,13 @@
   "q1_target_geometry": {
     "official_template_mm": [100.0, 60.0],
     "fixed_piece_target_scale": 1.03,
-    "edge_gap_mm": 2.0,
+    "edge_gap_mm": 5.0,
     "scaled_target_mm": [103.0, 61.8],
     "target_origin_mm": [53.5, 191.85],
     "target_center_mm": [105.0, 222.75],
     "source": "docs/E题_拼图装置.pdf page 2 Figure 2; run 20260731_012300_357937 scene/piece_moves JSON",
     "confidence": "B+A+D",
-    "note": "1.03 only calibrates the current fixed Q1 four-piece set. edge_gap_mm=2 shifts each piece 1 mm radially outward from the centered target; it does not redefine the official Figure 2 dimensions or apply to field-provided pieces."
+    "note": "1.03 only calibrates the current fixed Q1 four-piece set. edge_gap_mm=5 solves rigid translations for all five shared edges so every planned normal gap is 5 mm; the largest corresponding-vertex distance is 10.69 mm, below the official 20 mm limit. It does not redefine the official Figure 2 dimensions or apply to field-provided pieces."
   },
   "q1_pick_point": {
     "method": "maximum-clearance interior point of the detected polygon at 0.25 mm raster resolution",
@@ -94,7 +94,7 @@
   "q1_teammate_pintu_merge": {
     "adopted": [
       "template assignment uses target_scale",
-      "edge_gap_mm=2 target-piece spacing",
+      "edge_gap_mm=5 equal adjacent-edge spacing",
       "large-to-small P4-P3-P2-P1 placement order",
       "puzzle_runner pick-ready, descend, lift, in-air rotate, transit, place-ready, release and done-lift sequence",
       "puzzle_runner move, descend, lift, rotate and settle timing"
