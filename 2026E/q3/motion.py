@@ -8,6 +8,7 @@ import numpy as np
 
 from q1.calibration import ArmCoordinateMapper
 from q1.geometry import (
+    apply_uniform_shared_edge_gap,
     apply_rigid_transform,
     compute_rigid_transform,
     polygon_maximum_clearance_point,
@@ -269,8 +270,8 @@ def plan_card_moves(
         key=lambda item: observations[item.piece_id].piece.area,
         reverse=True,
     )
-    confidence = float(solution.pattern_confidence or 0.0)
-    moves: list[PieceMove] = []
+    source_vertices_by_id: dict[int, np.ndarray] = {}
+    target_vertices_by_id: dict[int, np.ndarray] = {}
     for placed in placed_items:
         observation = observations[placed.piece_id]
         final_transform = global_transform.compose(placed.transform)
@@ -282,14 +283,29 @@ def plan_card_moves(
             [final_transform.apply(point).as_tuple() for point in observation.piece.vertices],
             dtype=np.float64,
         )
-        source_paper = _portrait_paper_points(source_board, puzzle.paper_size_mm)
-        target_paper = _portrait_paper_points(target_board, puzzle.paper_size_mm)
+        source_vertices_by_id[placed.piece_id] = _portrait_paper_points(
+            source_board,
+            puzzle.paper_size_mm,
+        )
+        target_vertices_by_id[placed.piece_id] = _portrait_paper_points(
+            target_board,
+            puzzle.paper_size_mm,
+        )
+    if config.edge_gap_enabled:
+        target_vertices_by_id = apply_uniform_shared_edge_gap(
+            target_vertices_by_id,
+            config.edge_gap_mm,
+        )
+
+    confidence = float(solution.pattern_confidence or 0.0)
+    moves: list[PieceMove] = []
+    for placed in placed_items:
         moves.append(
             _build_move(
                 cycle_index=len(moves),
                 piece_id=placed.piece_id,
-                source_vertices_mm=source_paper,
-                target_vertices_mm=target_paper,
+                source_vertices_mm=source_vertices_by_id[placed.piece_id],
+                target_vertices_mm=target_vertices_by_id[placed.piece_id],
                 mapper=mapper,
                 config=config,
                 confidence=confidence,
