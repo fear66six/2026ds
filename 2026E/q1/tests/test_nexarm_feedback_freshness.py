@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
+from pathlib import Path
 
-import numpy as np
 import pytest
 
 import q1.executors.nexarm as nexarm_module
@@ -11,42 +10,11 @@ from q1.models import PaperPose, RobotPose, SingleMovePlan
 from q1.tests.test_q1_master_integration import configured_runtime
 
 
-TARGET_SERVOS = (1900, 2200, 1800, 3000, 2048, 2048)
-
-
-def _meta(clock: list[float], discarded: int = 0) -> dict:
-    started = clock[0]
-    return {
-        "bytes_discarded": discarded,
-        "request_started_s": started,
-        "response_received_s": started + 0.01,
-        "skipped_packets": 0,
-        "latency_s": 0.01,
-    }
-
-
-def _coords(pose, servos, clock):
-    return SimpleNamespace(
-        x=float(pose[0]),
-        y=float(pose[1]),
-        z=float(pose[2]),
-        pitch=float(pose[3]),
-        roll=float(pose[4]),
-        claw=float(pose[5]),
-        servo_positions=servos,
-        meta=_meta(clock),
-    )
-
-
-def test_servo_arrival_unblocks_after_stable_target_match(monkeypatch):
+def test_duration_and_settle_controls_progress_without_feedback(monkeypatch):
     config = configured_runtime()
-    config.idle_stable_samples = 3
-    config.motion_timeout_s = 12.0
-    executor = NexArmRobotExecutor(
-        __import__("pathlib").Path(__file__).resolve().parents[2], config
-    )
-    goal = np.array([246.0, 35.0, 25.0, -84.4, 0.0, 0.0])
-    target = RobotPose(*goal.tolist(), 6000)
+    config.post_move_settle_ms = 200
+    executor = NexArmRobotExecutor(Path(__file__).resolve().parents[2], config)
+    target = RobotPose(246.0, 35.0, 25.0, -84.4, 0.0, 0.0, 1000)
     clock = [0.0]
 
     class FakeClient:
@@ -54,10 +22,10 @@ def test_servo_arrival_unblocks_after_stable_target_match(monkeypatch):
             return None
 
         def get_ikine_servo_positions(self, *values, timeout=0.5):
-            return TARGET_SERVOS
+            raise AssertionError("IK feedback must not control this sequence")
 
-        def get_current_coords(self, timeout):
-            return _coords(goal, TARGET_SERVOS, clock)
+        def get_current_coords(self, timeout=0.5):
+            raise AssertionError("pose feedback must not control this sequence")
 
     monkeypatch.setattr(nexarm_module.time, "monotonic", lambda: clock[0])
     monkeypatch.setattr(
@@ -67,28 +35,25 @@ def test_servo_arrival_unblocks_after_stable_target_match(monkeypatch):
     )
     executor.client = FakeClient()
     executor._move_and_wait(target)
+
     attempt = executor._motion_attempts[-1]
-    assert attempt["result"] == "TARGET_REACHED"
-    assert attempt["telemetry_outcome"] == "ARRIVED"
-    assert attempt["physical_evidence"] == "TARGET_SERVOS_WITHIN_TOLERANCE"
-    assert clock[0] < 6.0
+    assert attempt["result"] == "DURATION_AND_SETTLE_ELAPSED"
+    assert attempt["telemetry_outcome"] == "NOT_USED_FOR_SEQUENCE_CONTROL"
+    assert attempt["physical_evidence"] == "UNPROVEN"
+    assert attempt["elapsed_s"] == pytest.approx(1.2)
+    assert clock[0] == pytest.approx(1.2)
 
 
-def test_ikine_timeout_fails_instead_of_hanging(monkeypatch):
+def test_zero_settle_waits_only_for_controller_duration(monkeypatch):
     config = configured_runtime()
-    config.motion_timeout_s = 1.0
-    executor = NexArmRobotExecutor(
-        __import__("pathlib").Path(__file__).resolve().parents[2], config
-    )
-    target = RobotPose(246.0, 35.0, 25.0, -84.4, 0.0, 0.0, 1000)
+    config.post_move_settle_ms = 0
+    executor = NexArmRobotExecutor(Path(__file__).resolve().parents[2], config)
+    target = RobotPose(246.0, 35.0, 25.0, -84.4, 0.0, 0.0, 800)
     clock = [0.0]
 
     class FakeClient:
         def set_pose(self, *values):
             return None
-
-        def get_ikine_servo_positions(self, *values, timeout=0.5):
-            raise TimeoutError("no ikine reply")
 
     monkeypatch.setattr(nexarm_module.time, "monotonic", lambda: clock[0])
     monkeypatch.setattr(
@@ -97,50 +62,15 @@ def test_ikine_timeout_fails_instead_of_hanging(monkeypatch):
         lambda seconds: clock.__setitem__(0, clock[0] + seconds),
     )
     executor.client = FakeClient()
-    with pytest.raises(TimeoutError, match="MOTION_IKINE_TIMEOUT"):
-        executor._move_and_wait(target)
-    assert clock[0] >= 2.0
+    executor._move_and_wait(target)
+
+    assert clock[0] == pytest.approx(0.8)
+    assert executor._motion_attempts[-1]["post_move_settle_s"] == 0.0
 
 
-def test_arrival_timeout_fails_when_servos_never_match(monkeypatch):
+def test_magnet_starts_after_pick_descent_and_stays_on_through_transfer(monkeypatch):
     config = configured_runtime()
-    config.motion_timeout_s = 1.0
-    config.idle_stable_samples = 3
-    executor = NexArmRobotExecutor(
-        __import__("pathlib").Path(__file__).resolve().parents[2], config
-    )
-    goal = np.array([246.0, 35.0, 25.0, -84.4, 0.0, 0.0])
-    target = RobotPose(*goal.tolist(), 1000)
-    clock = [0.0]
-    wrong = (100, 100, 100, 100, 100, 100)
-
-    class FakeClient:
-        def set_pose(self, *values):
-            return None
-
-        def get_ikine_servo_positions(self, *values, timeout=0.5):
-            return TARGET_SERVOS
-
-        def get_current_coords(self, timeout):
-            return _coords(goal, wrong, clock)
-
-    monkeypatch.setattr(nexarm_module.time, "monotonic", lambda: clock[0])
-    monkeypatch.setattr(
-        nexarm_module.time,
-        "sleep",
-        lambda seconds: clock.__setitem__(0, clock[0] + seconds),
-    )
-    executor.client = FakeClient()
-    with pytest.raises(TimeoutError, match="MOTION_ARRIVAL_TIMEOUT"):
-        executor._move_and_wait(target)
-    assert executor._active_motion_attempt["result"] == "ARRIVAL_TIMEOUT"
-
-
-def test_magnet_starts_after_pick_arrival(monkeypatch):
-    config = configured_runtime()
-    executor = NexArmRobotExecutor(
-        __import__("pathlib").Path(__file__).resolve().parents[2], config
-    )
+    executor = NexArmRobotExecutor(Path(__file__).resolve().parents[2], config)
     order: list[str] = []
 
     def fake_move_and_wait(pose):
@@ -168,42 +98,56 @@ def test_magnet_starts_after_pick_arrival(monkeypatch):
 
     executor._move_and_wait = fake_move_and_wait
     monkeypatch.setattr(nexarm_module.time, "sleep", lambda _seconds: None)
-    source = RobotPose(2, 0, 25, -84.4, 0, 0, 6000)
-    transfer = RobotPose(4, 0, 80, -90, 0, 0, 3000)
-    release = RobotPose(5, 0, 25, -84.4, 10, 0, 6000)
+    pick = RobotPose(2, 0, 25, -84.4, 0, 0, 800)
+    pick_ready = RobotPose(1, 0, 65, -84.4, 0, 0, 1500)
+    rotate = RobotPose(3, 0, 120, -84.4, 10, 0, 1200)
+    transit = RobotPose(4, 0, 120, -84.4, 10, 0, 1500)
+    release = RobotPose(5, 0, 25, -84.4, 10, 0, 800)
     plan = SingleMovePlan(
         0,
         "P1",
         PaperPose(1, 1),
         PaperPose(2, 2),
-        source,
+        pick,
         release,
         (1, 1),
-        source,
-        None,
-        transfer,
+        pick,
+        pick_ready,
+        transit,
         release,
         10,
         1,
         "test",
         0,
-        rotate_pose=None,
+        rotate_pose=rotate,
     )
+
     result = executor.execute_single_move(plan, FakeMagnet())
+
     assert result.ok
     assert order == [
+        "move:1",
         "move:2",
         "magnet_session_enter",
         "magnet_on",
         "magnet_healthy",
-        "move:4",
+        "move:2",
+        "move:3",
         "magnet_healthy",
+        "move:4",
+        "move:5",
         "move:5",
         "magnet_healthy",
         "magnet_off",
+        "move:5",
     ]
     assert result.details["trajectory_steps"] == [
-        "pick_pose_reached",
-        "buffer_then_release_pose_reached",
-        "magnet_off_after_release_pose_reached",
+        "MOVE_TO_PICK_READY",
+        "DESCEND_PICK",
+        "LIFT_PICK",
+        "ROTATE_IN_AIR",
+        "TRANSIT_TO_PLACE",
+        "MOVE_TO_PLACE_READY",
+        "DESCEND_PLACE",
+        "DONE_LIFT",
     ]

@@ -15,6 +15,7 @@ Notable public-facing changes are documented here. This project uses calendar da
 
 - Public documentation now separates source-confirmed behavior, engineering decisions, and pending physical verification.
 - Pure third-party ARM/ST support files and generated runtime artifacts are excluded from the public source tree.
+- Q1 offline tests now match the segmented transfer path and the controller-duration-plus-settle execution contract used by the current executor.
 
 ### Removed
 

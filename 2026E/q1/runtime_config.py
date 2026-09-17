@@ -21,7 +21,6 @@ class Q1RuntimeConfig:
     edge_gap_enabled: bool = True
     edge_gap_mm: float = 0.0
     q1_edge_gap_mm: float | None = None
-    q1_edge_gap_mm: float | None = None
     robot_config: Path | None = None
     run_root: Path = Path("output/runs/q1")
     camera_port: str | None = None

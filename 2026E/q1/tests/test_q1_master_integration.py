@@ -37,17 +37,21 @@ def configured_runtime(**overrides) -> Q1RuntimeConfig:
     for key in (
         "pick_height",
         "release_height",
-        "move_duration_ms",
+        "transfer_approach_dz_mm",
+        "transfer_transit_z",
+        "transfer_move_duration_ms",
+        "transfer_descend_duration_ms",
+        "transfer_lift_duration_ms",
+        "transfer_rotate_duration_ms",
+        "post_move_settle_ms",
         "magnet_settle_ms",
         "magnet_release_settle_ms",
         "magnet_lease_ms",
         "position_tolerance_mm",
         "orientation_tolerance_deg",
-        "motion_timeout_s",
         "vertex_max_error_mm",
     ):
         setattr(config, key, robot[key])
-    config.buffer_pose = tuple(robot["buffer_pose"])
     config.motion_mode = robot["motion_mode"]
     config.direct_pick_release_pose_verified = robot[
         "direct_pick_release_pose_verified"
@@ -276,21 +280,19 @@ class NexArmClient:
     executor.initialize()
     assert executor.client.write_commands[0][0] == "set_pose"
     assert executor.client.write_commands[0][1][-1] == 3000
-    assert executor.client.write_commands[1][0] == "get_ikine_servo_positions"
-    assert all(
-        item[0] == "get_current_coords"
-        for item in executor.client.write_commands[2:]
+    assert len(executor.client.write_commands) == 1
+    assert executor._initial_status["home_command_completed"] is True
+    assert executor._initial_status["arrival_basis"] == (
+        "controller duration plus settle elapsed"
     )
-    assert executor._initial_status["home_target_reached"] is True
     assert "global_acceleration" not in executor._initial_status
 
 
-def test_move_sequence_reaches_when_target_servos_stable(monkeypatch):
+def test_move_sequence_uses_controller_duration_plus_settle(monkeypatch):
     config = configured_runtime()
     config.idle_stable_samples = 3
     executor = NexArmRobotExecutor(Q1_ROOT.parent, config)
     target = np.array([173.0, 4.0, 226.0, -84.4, 0.0, 0.0])
-    servos = (2000, 2100, 2200, 2300, 2048, 2048)
     clock = [0.0]
 
     class FakeClient:
@@ -298,22 +300,10 @@ def test_move_sequence_reaches_when_target_servos_stable(monkeypatch):
             return None
 
         def get_ikine_servo_positions(self, *_values, timeout=0.5):
-            return servos
+            raise AssertionError("sequence control must not query IK feedback")
 
         def get_current_coords(self, timeout=0.5):
-            return SimpleNamespace(
-                x=target[0],
-                y=target[1],
-                z=target[2],
-                pitch=target[3],
-                roll=target[4],
-                claw=target[5],
-                servo_positions=servos,
-                meta={
-                    "request_started_s": clock[0],
-                    "response_received_s": clock[0] + 0.01,
-                },
-            )
+            raise AssertionError("sequence control must not query pose feedback")
 
     monkeypatch.setattr(nexarm_module.time, "monotonic", lambda: clock[0])
     monkeypatch.setattr(
@@ -323,22 +313,27 @@ def test_move_sequence_reaches_when_target_servos_stable(monkeypatch):
     )
     executor.client = FakeClient()
     executor._move_and_wait(RobotPose(*target.tolist(), 6000))
-    assert executor._active_motion_attempt["result"] == "TARGET_REACHED"
+    attempt = executor._active_motion_attempt
+    assert attempt["result"] == "DURATION_AND_SETTLE_ELAPSED"
+    assert attempt["telemetry_outcome"] == "NOT_USED_FOR_SEQUENCE_CONTROL"
+    assert attempt["physical_evidence"] == "UNPROVEN"
+    assert clock[0] == pytest.approx(6.2)
 
 
-def test_executor_uses_fixed_buffer_before_and_after_later_pick():
+def test_executor_uses_segmented_pick_and_place_trajectory():
     config = configured_runtime()
     executor = NexArmRobotExecutor(Q1_ROOT.parent, config)
     visited: list[float] = []
     executor._move_and_wait = lambda pose: visited.append(pose.x)
     executor._last_actual = np.array([10.0, 20.0, 226.0, -84.4, 0.0, 0.0])
-    source = RobotPose(2, 0, 25, -84.4, 0, 0, 6000)
-    rotate = RobotPose(3, 0, 226, -84.4, 10, 0, 6000)
-    transfer = RobotPose(4, 0, 80, -90, 0, 0, 3000)
-    release = RobotPose(5, 0, 25, -84.4, 10, 0, 6000)
+    source = RobotPose(2, 0, 25, -84.4, 0, 0, 800)
+    approach = RobotPose(1, 0, 65, -84.4, 0, 0, 1500)
+    rotate = RobotPose(3, 0, 120, -84.4, 10, 0, 1200)
+    transfer = RobotPose(4, 0, 120, -84.4, 10, 0, 1500)
+    release = RobotPose(5, 0, 25, -84.4, 10, 0, 800)
     plan = SingleMovePlan(
         1, "P2", PaperPose(1, 1), PaperPose(2, 2), source, release,
-        (1, 1), source, None, transfer, release, 10, 1, "test", 0,
+        (1, 1), source, approach, transfer, release, 10, 1, "test", 0,
         rotate_pose=rotate,
     )
 
@@ -356,12 +351,16 @@ def test_executor_uses_fixed_buffer_before_and_after_later_pick():
 
     result = executor.execute_single_move(plan, FakeMagnet())
     assert result.ok
-    assert visited == [4, 2, 4, 5]
+    assert visited == [1, 2, 2, 3, 4, 5, 5, 5]
     assert result.details["trajectory_steps"] == [
-        "returned_to_buffer_before_pick",
-        "pick_pose_reached",
-        "buffer_then_release_pose_reached",
-        "magnet_off_after_release_pose_reached",
+        "MOVE_TO_PICK_READY",
+        "DESCEND_PICK",
+        "LIFT_PICK",
+        "ROTATE_IN_AIR",
+        "TRANSIT_TO_PLACE",
+        "MOVE_TO_PLACE_READY",
+        "DESCEND_PLACE",
+        "DONE_LIFT",
     ]
     assert "real_arm_motion" not in result.details
     assert result.details["physical_evidence"] == "UNPROVEN"
@@ -386,7 +385,7 @@ def test_run_report_announces_copyable_paths_and_latest_pointer(tmp_path, capsys
     assert payload["magnet_backend"] == "stm32"
     assert payload["physical_pick_enabled"] is True
     assert payload["physical_pick_verified"] is False
-    assert "USER_VERIFIED_Z15_2026-07-30" in payload["motion_calibration_status"]
+    assert "USER_RECALIBRATED_XYZ_2026-07-31" in payload["motion_calibration_status"]
 
 
 def test_unverified_direct_pick_release_blocks_before_hardware_open():

@@ -98,6 +98,10 @@ def test_failed_hold_health_blocks_release_pose_before_send():
         magnet_settle_ms=0,
         magnet_release_settle_ms=0,
         magnet_backend="stm32",
+        transfer_approach_dz_mm=40.0,
+        transfer_transit_z=120.0,
+        transfer_move_duration_ms=1500,
+        transfer_lift_duration_ms=800,
     )
     executor = NexArmRobotExecutor(Path("."), config)
     sent: list[str] = []
@@ -136,4 +140,4 @@ def test_failed_hold_health_blocks_release_pose_before_send():
 
     with pytest.raises(RuntimeError, match="lease failed"):
         executor.execute_single_move(plan, FailedMagnet())
-    assert sent == ["source"]
+    assert sent == ["source", "source"]

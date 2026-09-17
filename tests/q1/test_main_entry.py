@@ -24,7 +24,7 @@ def test_real_run_requires_wrist_roll_mapping(tmp_path: Path):
         magnet_port="COM4",
         pick_height=40.0,
         release_height=38.0,
-        move_duration_ms=1500,
+        transfer_move_duration_ms=1500,
         magnet_settle_ms=200,
     ).real_run_blockers()
     assert any("腕部 roll" in item for item in blockers)

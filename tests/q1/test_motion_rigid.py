@@ -4,7 +4,12 @@ from q1.analyzer import SceneAnalyzer
 from q1.calibration import ArmCoordinateMapper
 from q1.camera import StaticImageCamera
 from q1.executors.simulation import SimulationWorld
-from q1.geometry import apply_rigid_pose, normalize_angle_deg, rigid_placement_transform
+from q1.geometry import (
+    apply_rigid_pose,
+    apply_rigid_transform,
+    normalize_angle_deg,
+    rigid_placement_transform,
+)
 from q1.motion import plan_piece_moves
 from q1.pieces import template_target_vertices_mm
 from q1.runtime_config import Q1RuntimeConfig
@@ -22,21 +27,22 @@ def test_rigid_placement_recovers_known_translation_and_rotation():
     assert abs(abs(normalize_angle_deg(angle)) - 23.0) < 1.5
 
 
-def test_planner_uses_rigid_target_center_not_bbox_angle(tmp_path):
+def test_planner_maps_clearance_pick_point_with_rigid_transform(tmp_path):
     world = SimulationWorld()
     snapshot = StaticImageCamera(world.snapshot).capture_snapshot(0)
     scene = SceneAnalyzer().analyze(snapshot, 0)
     plan = plan_piece_moves(
         scene,
         ArmCoordinateMapper(None),
-        Q1RuntimeConfig(run_root=tmp_path),
+        Q1RuntimeConfig(run_root=tmp_path, edge_gap_enabled=False),
     )[0]
-    template_id = plan.template_id
-    expected = scene.templates[template_id].expected_target_vertices_mm
-    _, end_c, angle = rigid_placement_transform(
-        np.asarray(scene.templates[template_id].detected_piece.vertices_mm),
-        np.asarray(expected),
+    expected_release = apply_rigid_transform(
+        plan.pick_point_source_mm,
+        plan.rigid_transform,
     )
-    assert abs(plan.target_pose_paper.x_mm - end_c[0]) < 1.0
-    assert abs(plan.target_pose_paper.y_mm - end_c[1]) < 1.0
-    assert abs(plan.rotation_delta_deg - angle) < 1.5
+    assert abs(plan.target_pose_paper.x_mm - expected_release[0]) < 1e-6
+    assert abs(plan.target_pose_paper.y_mm - expected_release[1]) < 1e-6
+    assert abs(
+        plan.rotation_delta_deg
+        - normalize_angle_deg(plan.rigid_transform.rotation_deg)
+    ) < 1e-6
