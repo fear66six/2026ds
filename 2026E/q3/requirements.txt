@@ -1,5 +1,5 @@
 numpy>=1.24
 opencv-python>=4.8
 pyserial>=3.5
-shapely>=2.0
+shapely>=2.1.2
 
