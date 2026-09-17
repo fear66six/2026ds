@@ -1,11 +1,6 @@
 # K230 TTL 正式相机链路（唯一生产方案）
 
-详细文档见：[`docs/interfaces/k230_ttl_camera/`](../../../docs/interfaces/k230_ttl_camera/)。
-
-- **Jetson 调用接口**：[JETSON_PYTHON_API.md](../../../docs/interfaces/k230_ttl_camera/JETSON_PYTHON_API.md)
-- **协议 V2**：[PROTOCOL_V2.md](../../../docs/interfaces/k230_ttl_camera/PROTOCOL_V2.md)
-- **接线**：[HARDWARE_CONNECTION.md](../../../docs/interfaces/k230_ttl_camera/HARDWARE_CONNECTION.md)
-- **速查**：[QUICK_REFERENCE.md](../../../docs/interfaces/k230_ttl_camera/QUICK_REFERENCE.md)
+公开接口、协议、接线边界与证据见 [K230 TTL 接口说明](../../../docs/interfaces/k230_ttl_camera/README.md)。
 
 ## 固定参数
 

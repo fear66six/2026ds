@@ -1,0 +1,59 @@
+name: Bug report
+description: Report a reproducible software problem without operating real hardware.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve the project. Do not include credentials, personal information, private device identifiers, or unsafe motion instructions.
+  - type: dropdown
+    id: task
+    attributes:
+      label: Affected area
+      options:
+        - Q1 fixed-piece puzzle
+        - Q2 random-polygon puzzle
+        - Q3 playing-card puzzle
+        - K230 camera protocol
+        - NexArm integration
+        - STM32 electromagnet
+        - Documentation or tooling
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Problem
+      description: What happened, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Minimal reproduction
+      description: Prefer Mock, offline input, or plan-only steps. Do not reproduce unsafe hardware behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Python, OpenCV, task mode, and relevant commit. Redact device serial numbers and local paths.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Logs or sample data
+      description: Attach the smallest redacted artifact that demonstrates the issue.
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety confirmation
+      options:
+        - label: I removed secrets and personal/device-identifying information.
+          required: true
+        - label: Reproducing this report does not require unreviewed robot motion, flashing, GPIO access, or magnet energization.
+          required: true

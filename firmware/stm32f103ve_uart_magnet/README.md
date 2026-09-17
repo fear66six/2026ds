@@ -1,5 +1,8 @@
 # STM32F103VET6 USART magnet / ping firmware
 
+> A fresh public clone must restore the untracked ARM/ST CMSIS and startup
+> sources before building. See [STM32 third-party build dependencies](../THIRD_PARTY_DEPENDENCIES.md).
+
 Independent Keil MDK projects ported from `firmware/stm32f103_uart_magnet`
 (STM32F103C8T6). The C8T6 tree is left unchanged.
 

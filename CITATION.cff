@@ -1,0 +1,16 @@
+cff-version: 1.2.0
+message: "If this project helps your work, please cite the repository using this metadata."
+title: "Intelligent Puzzle Assembly Robot for 2026 NUEDC Problem E"
+type: software
+authors:
+  - name: "fear66six and contributors"
+repository-code: "https://github.com/fear66six/2026ds"
+license: MIT
+keywords:
+  - robotics
+  - computer vision
+  - puzzle solving
+  - NVIDIA Jetson
+  - STM32
+  - K230
+  - undergraduate electronics design contest

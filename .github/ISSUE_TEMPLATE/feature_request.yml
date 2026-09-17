@@ -1,0 +1,33 @@
+name: Feature request
+description: Propose a focused improvement to the public project.
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: Describe the user or engineering problem, not only the preferred implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed approach
+      description: Include affected modules, compatibility concerns, and an offline validation plan.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence or references
+      description: Link source files, official hardware documentation, papers, or reproducible examples.
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope checks
+      options:
+        - label: The proposal keeps hardware access explicit and disabled by default.
+          required: true
+        - label: I have checked that the proposal does not require redistributing unlicensed third-party code.
+          required: true

@@ -1,0 +1,3 @@
+-r 2026E/q3/requirements.txt
+pytest>=8.0
+

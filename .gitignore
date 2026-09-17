@@ -1,6 +1,30 @@
 # Generated document-search cache
 /.cache/
 
+# Local AI/editor coordination metadata (project policy is documented publicly)
+/AGENTS.md
+/.cursor/
+/.cursorignore
+/.agents/
+/.codex/
+/typescript
+
+# Runtime outputs and local diagnostics (selected public samples live in assets/)
+/output/
+/reports/
+/logs/
+/tmp/
+/backup/
+/2026E/output/
+/2026E/runs/
+
+# Embedded build reports are machine-specific and may expose local tool paths
+/firmware/**/build/
+
+# Pure third-party ARM/ST support sources; obtain from the matching vendor pack
+/firmware/*/cmsis/
+/firmware/*/startup/
+
 # External reference tree: never commit; treat as immutable (read-only)
 /pintu/
 
@@ -16,7 +40,13 @@
 !/docs/PROJECT_FACTS.md
 !/docs/DECISIONS.md
 !/docs/TODO_VERIFY.md
+!/docs/ARCHITECTURE.md
+!/docs/PORTFOLIO.md
+!/docs/DEVELOPMENT.md
+!/docs/OPEN_SOURCE_CHECKLIST.md
 !/docs/interfaces/
+!/docs/interfaces/k230_ttl_camera/
+!/docs/interfaces/k230_ttl_camera/*.md
 !/docs/interfaces/magnet_control/
 !/docs/interfaces/magnet_control/*.md
 !/docs/q1/
@@ -27,6 +57,13 @@
 *.py[cod]
 .venv/
 venv/
+.coverage
+coverage.xml
+htmlcov/
+junit/
+.mypy_cache/
+.ruff_cache/
+.tox/
 
 # IDE and OS-local files
 .idea/
@@ -34,6 +71,8 @@ venv/
 *.code-workspace
 Thumbs.db
 Desktop.ini
+*.swp
+*.swo
 
 # Native/embedded build products
 *.o
